@@ -1,6 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import {scopeKey,conversationSummaries,sortConversations,searchLocalMessages,previewOf} from "./chatUiState.js"
+import {scopeKey,conversationSummaries,sortConversations,searchLocalMessages,previewOf,summarizeReactions} from "./chatUiState.js"
 const rooms=[{id:"a",name:"Alpha"},{id:"b",name:"Beta"},{id:"lobby",name:"大厅"}]
 const history=[
   {id:"1",roomId:"a",sender:"alice",text:"hello",createdAt:"2026-10-15T10:00:00Z"},
@@ -26,4 +26,14 @@ test("message search matches text, sender and attachments only in permitted room
  assert.equal(searchLocalMessages([...history,extra],"报告",["a"]).length,0)
  assert.equal(searchLocalMessages(history,"bob",null,1).length,1)
  assert.equal(searchLocalMessages(history,"   ").length,0)
+})
+
+test("reaction events are deduplicated, toggle off and do not create chat previews",()=>{
+ const a={id:"e1",type:"reaction",roomId:"a",replyTo:"m1",sender:"bob",text:"👍",createdAt:"2026-10-15T10:11:00Z"}
+ const b={...a,id:"e2",sender:"alice"}
+ const m=summarizeReactions([a,a,b],"a","alice")
+ assert.deepEqual(m.m1,[{emoji:"👍",count:2,mine:true}])
+ assert.deepEqual(summarizeReactions([a,b,{...a,id:"e3"}],"a","alice").m1,[{emoji:"👍",count:1,mine:true}])
+ assert.equal(conversationSummaries([...history,a],"alice",{}).a.latest.id,"3")
+ assert.equal(searchLocalMessages([a],"👍").length,0)
 })

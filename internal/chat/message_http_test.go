@@ -141,3 +141,37 @@ func TestReplyMetadataIsPersistedAndScopedToRoom(t *testing.T){
    map[string]string{"roomId":room.ID,"text":"invalid","replyTo":"../../unknown"})
  if bad.Code!=400{t.Fatal("untrusted reply id accepted",bad.Code)}
 }
+
+func TestReactionEventsAuthorizedAndPersisted(t *testing.T){
+ s:=testServer(t)
+ alice:=reg(t,s,"alice")
+ bob:=reg(t,s,"bob")
+ carol:=reg(t,s,"carol")
+ room,err:=s.store.CreateDirect("alice","bob")
+ if err!=nil{t.Fatal(err)}
+ posted:=authenticatedJSON(t,s,"POST","/api/messages/send",alice,
+   map[string]string{"roomId":room.ID,"text":"hello"})
+ if posted.Code!=201{t.Fatal(posted.Body.String())}
+ var original ChatMessage
+ if err:=json.Unmarshal(posted.Body.Bytes(),&original);err!=nil{t.Fatal(err)}
+ sendReaction:=func(actor,emoji string)*httptest.ResponseRecorder {
+  return authenticatedJSON(t,s,"POST","/api/messages/react",actor,
+   map[string]string{"roomId":room.ID,"messageId":original.ID,"emoji":emoji})
+ }
+ got:=sendReaction(bob,"👍")
+ if got.Code!=201{t.Fatalf("reaction HTTP %d %s",got.Code,got.Body.String())}
+ var event ChatMessage
+ if err:=json.Unmarshal(got.Body.Bytes(),&event);err!=nil{t.Fatal(err)}
+ if event.Type!="reaction"||event.Text!="👍"||event.ReplyTo!=original.ID||event.Sender!="bob"{
+  t.Fatal("incorrect reaction event",event)
+ }
+ persisted,err:=NewStore(filepath.Dir(s.store.path))
+ if err!=nil{t.Fatal(err)}
+ found:=false
+ for _,msg:=range persisted.PendingFor("alice"){
+   if msg.ID==event.ID && msg.Type=="reaction"{found=true}
+ }
+ if !found{t.Fatal("reaction event not persistent offline")}
+ if sendReaction(carol,"👍").Code!=403{t.Fatal("nonmember reacted to private room")}
+ if sendReaction(bob,"script").Code!=400{t.Fatal("unlisted reaction accepted")}
+}
