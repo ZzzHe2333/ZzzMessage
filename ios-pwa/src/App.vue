@@ -35,7 +35,8 @@ const deviceID = ref('')
 const syncStatus = ref('未请求同步')
 const syncBusy = ref(false)
 const historyChunkWaiters = new Map()
-const wallet = ref({ gold:0, silver:0, copper:0, lastDaily:'' })
+const wallet = ref({ gold:0, silver:0, copper:0, lastDaily:'', lastReward:'' })
+const dailyNotice = ref('')
 const giftCatalog = ref([])
 const giftHistory = ref([])
 const giftRecipient = ref('')
@@ -162,6 +163,11 @@ async function authenticate() {
     localStorage.setItem(savedTokenKey(), data.token)
     me.value = data.user
     await initialize()
+    if (data.dailyReward) {
+      dailyNotice.value = '今天登录获得 1 枚' + giftCurrencyName(data.dailyReward.currency)
+      economyStatus.value = dailyNotice.value
+      status.value = dailyNotice.value
+    }
     navigate('/message', true)
   } catch (err) { showError(err) }
   finally { busy.value = false }
@@ -178,6 +184,7 @@ async function initialize() {
   mobileChat.value = false
   localDeviceID()
   connect()
+  void autoDailyCheckIn()
   if (isNativeAndroid) {
     void restoreNativeRegistration()
   } else {
@@ -343,12 +350,19 @@ async function refreshWallet() {
   try { wallet.value=await request('/api/money') }
   catch(err) {economyStatus.value=err.message}
 }
-async function claimDailyCoins() {
-  economyStatus.value=''
+async function autoDailyCheckIn() {
+  if (!me.value) return
   try {
-    wallet.value=await request('/api/money/daily',{method:'POST'})
-    economyStatus.value='领取成功：金币 +1、银币 +5、铜币 +150'
-  } catch(err) {economyStatus.value=err.message}
+    const reply = await request('/api/money/daily', { method: 'POST' })
+    wallet.value = reply.wallet
+    if (reply.claimed) {
+      dailyNotice.value = '今天登录获得 1 枚' + giftCurrencyName(reply.reward.currency)
+      economyStatus.value = dailyNotice.value
+      status.value = dailyNotice.value
+    }
+  } catch(err) {
+    economyStatus.value = '自动登录奖励暂时失败：' + err.message
+  }
 }
 async function openGiftShop() {
   if (!me.value) return
@@ -734,9 +748,11 @@ onBeforeUnmount(() => {
           <article class="coin-card"><span>铜币</span><strong>{{ wallet.copper }}</strong><small>Copper</small></article>
         </div>
         <div class="economy-actions">
-          <h3>每日奖励</h3>
-          <p>每日按 UTC 日期领取金币 1、银币 5、铜币 150，每天仅能领取一次。</p>
-          <button class="primary" @click="claimDailyCoins">领取今日奖励</button>
+          <h3>每日登录奖励</h3>
+          <p>每天首次登录自动随机获得 1 枚虚拟货币，每个账号按 UTC 日期每天最多一次。</p>
+          <p>金币 1% · 银币 9% · 铜币 90%（三选一，单次只发 1 枚）</p>
+          <p v-if="dailyNotice" class="hint" role="status">{{ dailyNotice }}</p>
+          <p v-if="wallet.lastDaily" class="hint">最近领取：{{ wallet.lastDaily }} · {{ giftCurrencyName(wallet.lastReward) }} ×1</p>
           <button class="secondary" @click="navigate('/gift')">前往礼物商店</button>
         </div>
         <p class="hint" role="status">{{ economyStatus }}</p>
