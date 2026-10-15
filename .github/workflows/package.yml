@@ -1,6 +1,9 @@
 name: Package (on request)
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'validation/2026-10-15-tg-ux-extended'
 permissions:
   contents: read
 jobs:
