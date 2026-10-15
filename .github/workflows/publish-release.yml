@@ -1,0 +1,78 @@
+name: Publish ZzzMessage Release (explicit request)
+on:
+  push:
+    branches:
+      - "release-request/**"
+permissions:
+  contents: write
+  actions: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: v0.2.0-beta.1
+      BUILD_RUN_ID: "38683315705"
+      TARGET_COMMIT: "f296be46720ccd72068159fc3854a828f0bd51a5"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download previously compiled and tested packages
+        run: |
+          set -euo pipefail
+          mkdir -p release-files
+          gh run download "$BUILD_RUN_ID" --repo "$GH_REPO" --name "ZzzMessage-cross-platform-packages" --dir release-files
+          cd release-files
+          sha256sum -c SHA256SUMS.txt
+          test -f ZzzMessage-Windows-amd64.zip
+          test -f ZzzMessage-Linux-amd64.tar.gz
+          test -f ZzzMessage-Linux-arm64.tar.gz
+          test -f ZzzMessage-Web-static.zip
+          test -f ZzzMessage-iPhone-PWA.zip
+          test -f ZzzMessage-Docker-source.tar.gz
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<'NOTES'
+          ZzzMessage 私人聊天首个跨平台预览发行版。
+
+          ### 下载内容
+          - Windows x64：Go 后端 EXE、Vue Web 静态文件、PowerShell 启动脚本
+          - Linux x64 与 Linux ARM64：Go 后端可执行文件、Vue Web 静态文件、Shell 启动脚本
+          - 通用 Web：Vue 生产静态文件
+          - iPhone PWA：独立 Vue PWA 静态文件（HTTPS 才能启用 iPhone 主屏幕推送）
+          - Docker：可自行构建 Go/Caddy/Vue 镜像的部署源码（**不是预构建镜像**）
+          - SHA256SUMS.txt：各发行包 SHA-256 校验
+
+          ### 部署
+          解压对应平台压缩包，复制 .env.example 为 .env，填写至少 12 位邀请码 INVITE_CODE 与至少 32 位随机 SESSION_SECRET。
+          Windows 使用 start.ps1，Linux 使用 start.sh。
+          默认仅监听 127.0.0.1:58463。远程通信及手机 PWA 必须部署稳定 HTTPS 或安全隧道。
+          详情参见仓库 docs/RELEASE.md。
+
+          ### 重要限制
+          此版本为 **beta 预览**，不能视为已经完成公网安全审计。
+          - Go 自动化测试、Web/iPhone PWA 构建及 Windows/Linux 交叉编译已通过。
+          - Windows 原生运行及 Docker 部署尚未真实验证；iPhone Web Push、Xiaomi/vivo 厂商推送尚未完成真机验证。
+          - **没有 Android APK**：Android 项目源码已提交，但需厂商 SDK/开发者资质方能正常构建测试。
+          - 服务器不持久化聊天正文；离线期间的消息不会补发。当前不是端到端加密。
+
+          ### 版本来源
+          编译产物来自成功的 GitHub Actions 构建： https://github.com/ZzzHe2333/ZzzMessage/actions/runs/38683315705
+          打包源提交：81bacc6715380e29d4e60c1a50dde2be68d27055。
+          本 Release tag 指向 main 上含有相同运行源码的提交；后续仅有发行流水线开关差异。
+
+          NOTES
+      - name: Publish GitHub prerelease with all assets
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release-files/ZzzMessage-* release-files/SHA256SUMS.txt \
+            --repo "$GH_REPO" \
+            --target "$TARGET_COMMIT" \
+            --title "ZzzMessage v0.2.0-beta.1 · Windows / Linux / Docker / Web / iPhone PWA" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
+      - name: Confirm all release assets
+        run: |
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json url,tagName,isPrerelease,assets
