@@ -1,9 +1,6 @@
 name: Package (on request)
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - 'build-request/**'
 permissions:
   contents: read
 jobs:
