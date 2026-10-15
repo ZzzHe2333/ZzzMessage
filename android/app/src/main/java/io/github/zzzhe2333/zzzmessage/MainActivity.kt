@@ -149,8 +149,14 @@ class MainActivity : Activity() {
     @Deprecated("Platform permission callback")
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grants: IntArray) {
         super.onRequestPermissionsResult(code, permissions, grants)
-        if (code == 700 && grants.isNotEmpty() && grants[0] == PackageManager.PERMISSION_GRANTED) {
-            registerVendor()
+        if (code == 700) {
+            if (grants.isNotEmpty() && grants[0] == PackageManager.PERMISSION_GRANTED) {
+                registerVendor()
+            } else {
+                browser.evaluateJavascript(
+                    "window.dispatchEvent(new CustomEvent('zzz:native-push-error', {detail:'系统通知权限被拒绝'}));", null
+                )
+            }
         }
     }
 
