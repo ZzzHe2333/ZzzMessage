@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { keepMessage, keepMessages, loadMessages, loadAllMessages, clearRoom, deleteLocalMessage } from './localMessages'
-import { scopeKey, conversationSummaries, sortConversations, searchLocalMessages, previewOf } from './chatUiState'
+import { scopeKey, conversationSummaries, sortConversations, searchLocalMessages, previewOf, summarizeReactions } from './chatUiState'
 
 const SERVER_KEY = 'zzzmessage.server'
 const ROUTES = new Set(['/login','/setting','/message','/friend','/gift','/money'])
@@ -34,6 +34,8 @@ const chatSearch = ref('')
 const allLocalMessages = ref([])
 const chatPrefs = ref({})
 const replyTo = ref(null)
+const reactionChoices = ['👍','❤️','😂','😮','😢','🎉']
+const reactionBusy = ref(false)
 const messageActions = ref('')
 const messageSearchOpen = ref(false)
 const messageSearch = ref('')
@@ -107,7 +109,7 @@ const inRoomSearch = computed(() => searchLocalMessages(
 const roomUnread = id => roomSummaries.value[id]?.unread || 0
 const lastInRoom = id => roomSummaries.value[id]?.latest || null
 const previewRoom = id => {
-  const localDraft = readRoomDraft(id)
+  const localDraft = id===selectedId.value ? draft.value : readRoomDraft(id)
   if(localDraft.trim()) return '草稿：'+localDraft.replace(/\s+/g,' ').slice(0,65)
   return previewOf(lastInRoom(id),me.value?.username)
 }
@@ -214,6 +216,20 @@ function openReply(message){
   emojiOpen.value=false
   nextTick(()=>document.querySelector('.tg-composer textarea')?.focus())
 }
+async function reactTo(message,emoji){
+  if(reactionBusy.value || !message?.id || !me.value)return
+  reactionBusy.value=true
+  try{
+    const event=await request('/api/messages/react',{
+      method:'POST',body:JSON.stringify({
+        roomId:message.roomId,messageId:message.id,emoji
+      })
+    })
+    await acceptMessage(event)
+    messageActions.value=''
+  }catch(err){showError(err)}
+  finally{reactionBusy.value=false}
+}
 async function copyMessage(message){
   try{await navigator.clipboard.writeText(message.text||message.attachment?.name||'')
     status.value='已复制消息文字'
@@ -309,7 +325,14 @@ async function downloadAttachment(attachment){
 }
 
 const serverName = computed(() => { try { return new URL(server.value).host } catch { return server.value } })
-const sortedMessages = computed(() => [...messages.value].sort((a,b) => a.createdAt.localeCompare(b.createdAt)))
+const sortedMessages = computed(() => messages.value.filter(m=>m.type!=='reaction').sort((a,b)=>a.createdAt.localeCompare(b.createdAt)))
+const reactionSummaries = computed(()=>summarizeReactions(allLocalMessages.value,selectedId.value,me.value?.username||''))
+const reactionsFor = id => reactionSummaries.value[id]||[]
+const messageDay = timestamp => {
+  const date=new Date(timestamp)
+  if(Number.isNaN(date.getTime()))return ''
+  return date.toLocaleDateString('zh-CN',{year:'numeric',month:'long',day:'numeric'})
+}
 const selectedUsers = computed(() => users.value.filter(u => groupMembers.value.includes(u.username)))
 
 function isPrivateLANHost(hostname) {
@@ -569,7 +592,7 @@ function connect() {
       if (routePath.value==='/gift') void openGiftShop()
     }
     else if (data.type === 'error') status.value = data.error
-    else if (data.type === 'message') {
+    else if (data.type === 'message' || data.type === 'reaction') {
       await acceptMessage(data)
     }
   }
@@ -1284,7 +1307,9 @@ onBeforeUnmount(() => {
         <div ref="chatScroll" class="timeline">
           <div class="info-banner">消息会先由服务器保存到待投递队列，恢复连接后补发并留在本机；服务器收到收妥确认后删除待投递副本。当前不是端到端加密。</div>
           <p v-if="sortedMessages.length === 0" class="empty-chat">还没有本地聊天记录。发送第一条消息吧。</p>
-          <div v-for="m in sortedMessages" :key="m.id" class="message"
+          <template v-for="(m, index) in sortedMessages" :key="m.id">
+          <div v-if="index===0 || messageDay(sortedMessages[index-1].createdAt)!==messageDay(m.createdAt)" class="tg-day-divider">{{ messageDay(m.createdAt) }}</div>
+          <div class="message"
             :data-message-id="m.id" :class="{ mine: m.sender === me.username, 'tg-message-highlight': highlightedId===m.id }">
             <div class="bubble tg-message-bubble">
               <div class="tg-message-top">
@@ -1300,7 +1325,16 @@ onBeforeUnmount(() => {
               <button v-else class="tg-attachment" type="button" @click="downloadAttachment(m.attachment)" :title="m.attachment.name">
                 <span>📎</span><span><strong>{{ m.attachment.name }}</strong><small>{{ fileSize(m.attachment.size) }} · 下载文件</small></span><span>↓</span>
               </button>
+              <div v-if="reactionsFor(m.id).length" class="tg-message-reactions">
+                <button v-for="reaction in reactionsFor(m.id)" :key="reaction.emoji" type="button"
+                  :class="{ mine: reaction.mine }" :title="'点击切换回应 '+reaction.emoji"
+                  @click="reactTo(m,reaction.emoji)">{{ reaction.emoji }} {{ reaction.count }}</button>
+              </div>
               <div v-if="messageActions===m.id" class="tg-message-menu">
+                <div class="tg-reaction-quick">
+                  <button v-for="emoji in reactionChoices" :key="emoji" type="button"
+                    :disabled="reactionBusy" @click="reactTo(m,emoji)">{{ emoji }}</button>
+                </div>
                 <button type="button" @click="openReply(m)">↩ 回复</button>
                 <button type="button" @click="copyMessage(m)">⧉ 复制文本</button>
                 <button type="button" @click="beginForward(m)">➦ 转发文字</button>
@@ -1308,6 +1342,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+          </template>
         </div>
         <div class="tg-composer-area">
           <div v-if="replyTo" class="tg-reply-composer">
