@@ -255,7 +255,9 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 500, "服务器错误")
 		return
 	}
-	writeJSON(w, 201, map[string]any{"user": user, "token": token})
+    reward,err:=s.loginBonus(user.Username)
+    if err!=nil{log.Printf("register bonus failed: %v",err);apiError(w,500,"每日奖励发放失败");return}
+	writeJSON(w, 201, map[string]any{"user": user, "token": token,"dailyReward":reward})
 }
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -280,7 +282,9 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		apiError(w, 500, "服务器错误")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"user": user, "token": token})
+    reward,err:=s.loginBonus(user.Username)
+    if err!=nil{log.Printf("login bonus failed: %v",err);apiError(w,500,"每日奖励发放失败");return}
+	writeJSON(w, 200, map[string]any{"user": user, "token": token,"dailyReward":reward})
 }
 
 type session struct {

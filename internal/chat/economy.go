@@ -1,6 +1,8 @@
 package chat
 
 import (
+  "crypto/rand"
+  "math/big"
   "errors"
   "net/http"
   "sort"
@@ -14,6 +16,7 @@ type Wallet struct {
     Silver int64 `json:"silver"`
     Copper int64 `json:"copper"`
     LastDaily string `json:"lastDaily,omitempty"`
+    LastReward string `json:"lastReward,omitempty"`
 }
 type GiftItem struct{
     ID string `json:"id"`
@@ -51,17 +54,45 @@ func (s *Store) GetWallet(username string)(Wallet,error){
     if _,ok:=s.state.Users[username];!ok{return Wallet{},ErrNotFound}
     return s.state.Wallets[username],nil
 }
-func (s *Store) ClaimDaily(username string,now time.Time)(Wallet,error){
+// Draw from a cryptographic CSPRNG; 100 possible outcomes have equal weight.
+// One currency, exactly one unit: gold 1%, silver 9%, copper 90%.
+func secureDailyRoll()(int,error){
+    n,err:=rand.Int(rand.Reader,big.NewInt(100))
+    if err!=nil{return 0,err}
+    return int(n.Int64()),nil
+}
+func dailyCurrency(roll int)string {
+    switch {
+    case roll>=0&&roll<1:return "gold"
+    case roll>=1&&roll<10:return "silver"
+    case roll>=10&&roll<100:return "copper"
+    default:return ""
+    }
+}
+
+// Atomic once-per-UTC-day claim shared by explicit credential login and
+// authenticated PWA session restore. No client can choose the random outcome.
+func (s *Store) ClaimDaily(username string, now time.Time)(Wallet,error){
+    return s.claimDailyWithRoll(username,now,secureDailyRoll)
+}
+func (s *Store) claimDailyWithRoll(username string,now time.Time,draw func()(int,error))(Wallet,error){
     date:=now.UTC().Format("2006-01-02")
     s.mu.Lock();defer s.mu.Unlock()
     if _,ok:=s.state.Users[username];!ok{return Wallet{},ErrNotFound}
     old:=s.state.Wallets[username]
     if old.LastDaily==date{return old,ErrAlreadyClaimed}
+    roll,err:=draw()
+    if err!=nil{return Wallet{},err}
+    coin:=dailyCurrency(roll)
+    if coin==""{return Wallet{},ErrInvalid}
     earned:=old
-    earned.Gold+=1
-    earned.Silver+=5
-    earned.Copper+=150
+    switch coin{
+    case "gold":earned.Gold++
+    case "silver":earned.Silver++
+    case "copper":earned.Copper++
+    }
     earned.LastDaily=date
+    earned.LastReward=coin
     if s.state.Wallets==nil{s.state.Wallets=map[string]Wallet{}}
     s.state.Wallets[username]=earned
     if err:=s.saveLocked();err!=nil{s.state.Wallets[username]=old;return Wallet{},err}
@@ -126,12 +157,26 @@ func (s *Server) moneyBalance(w http.ResponseWriter,r *http.Request,user string)
     if err!=nil{apiError(w,404,"账户不存在");return}
     writeJSON(w,200,wallet)
 }
+// An explicit authenticated check-in is used for saved sessions on Web/PWA.
+// The endpoint is idempotent so network retries never double-credit.
 func (s *Server) moneyDaily(w http.ResponseWriter,r *http.Request,user string){
     wallet,err:=s.store.ClaimDaily(user,time.Now())
-    if errors.Is(err,ErrAlreadyClaimed){apiError(w,409,"今日奖励已经领取，UTC 次日可重新领取");return}
-    if err!=nil{apiError(w,500,"领取失败");return}
-    writeJSON(w,200,wallet)
+    if errors.Is(err,ErrAlreadyClaimed){
+        writeJSON(w,200,map[string]any{"wallet":wallet,"claimed":false})
+        return
+    }
+    if err!=nil{apiError(w,500,"每日登录奖励发放失败");return}
+    writeJSON(w,200,map[string]any{"wallet":wallet,"claimed":true,
+        "reward":map[string]any{"currency":wallet.LastReward,"amount":1,"date":wallet.LastDaily}})
 }
+
+func (s *Server) loginBonus(username string)(map[string]any,error){
+    wallet,err:=s.store.ClaimDaily(username,time.Now())
+    if errors.Is(err,ErrAlreadyClaimed){return nil,nil}
+    if err!=nil{return nil,err}
+    return map[string]any{"currency":wallet.LastReward,"amount":1,"date":wallet.LastDaily},nil
+}
+
 func (s *Server) giftCatalog(w http.ResponseWriter,r *http.Request,user string){
     writeJSON(w,200,giftItems)
 }
