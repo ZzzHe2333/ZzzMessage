@@ -924,17 +924,26 @@ onBeforeUnmount(() => {
       <button class="link subtle" @click="changeServer">更换服务器</button>
     </section>
 
-    <section v-else class="app card" :class="{ 'mobile-chat': mobileChat }">
+    <section v-else class="app card" :class="{ 'mobile-chat': mobileChat, 'info-open': infoOpen && routePath === '/message' }">
       <aside class="sidebar">
-        <header class="sidebar-head">
-          <div class="brand"><span class="small-icon">Z</span><div><strong>ZzzMessage</strong><small>{{ serverName }}</small></div></div>
-          <button class="icon-button" aria-label="设置" @click="navigate(showSettings ? '/message' : '/setting'); newGroup = false">⚙</button>
+        <header class="sidebar-head tg-sidebar-head">
+          <div class="tg-search-row">
+            <button class="tg-round-btn" type="button" aria-label="打开菜单" @click="menuOpen=!menuOpen">☰</button>
+            <label class="tg-search"><span aria-hidden="true">⌕</span><input v-model="chatSearch" type="search" placeholder="搜索聊天和联系人" aria-label="搜索聊天和联系人" /></label>
+          </div>
+          <div v-if="menuOpen" class="tg-menu" role="menu">
+            <button @click="goMenu('/message')">💬　全部聊天</button>
+            <button @click="goMenu('/friend')">👥　联系人</button>
+            <button @click="newGroup=true; menuOpen=false; refresh()">✚　新建群聊</button>
+            <button @click="goMenu('/gift')">🎁　礼物商店</button>
+            <button @click="goMenu('/money')">🪙　我的钱包</button>
+            <button @click="goMenu('/setting')">⚙　设置</button>
+            <div class="tg-menu-foot">{{ me.displayName }} · @{{ me.username }}</div>
+          </div>
         </header>
-        <div class="nav-tabs">
-          <button :class="{ chosen: routePath === '/message' }" @click="navigate('/message')">会话</button>
-          <button :class="{ chosen: routePath === '/friend' }" @click="navigate('/friend'); refresh()">联系人</button>
-          <button :class="{ chosen: routePath === '/gift' }" @click="navigate('/gift')">礼物</button>
-          <button :class="{ chosen: routePath === '/money' }" @click="navigate('/money')">钱包</button>
+        <div class="tg-sidebar-title">
+          <strong>{{ routePath === '/friend' ? '联系人' : routePath === '/setting' ? '设置' : newGroup ? '新建群聊' : '全部聊天' }}</strong>
+          <button v-if="!newGroup && !showSettings" class="tg-round-btn" title="新建群聊" @click="newGroup=true; refresh()">＋</button>
         </div>
         <div v-if="showSettings" class="sidebar-body">
           <h3>设置</h3>
@@ -981,12 +990,12 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="tab === 'people'" class="room-list">
           <div class="list-title">成员 <button class="link" @click="refresh">刷新</button></div>
-          <button v-for="u in users" :key="u.username" class="room-item" @click="direct(u.username)"><span class="avatar">{{ u.displayName[0] }}</span><span class="room-copy"><strong>{{ u.displayName }}</strong><small>@{{ u.username }} · 发起私聊</small></span></button>
+          <button v-for="u in filteredPeople" :key="u.username" class="room-item" @click="direct(u.username)"><span class="avatar">{{ u.displayName[0] }}</span><span class="room-copy"><strong>{{ u.displayName }}</strong><small>@{{ u.username }} · 发起私聊</small></span></button>
           <p v-if="!users.length" class="empty-note">目前还没有其他成员</p>
         </div>
         <div v-else class="room-list">
           <div class="list-title">聊天会话 <button class="link" @click="newGroup = true; refresh()">+ 新建群聊</button></div>
-          <button v-for="r in rooms" :key="r.id" class="room-item" :class="{ active: selectedId === r.id }" @click="selectRoom(r.id)"><span class="avatar" :class="{ group: r.type !== 'direct' }">{{ r.type === 'direct' ? '◉' : '#' }}</span><span class="room-copy"><strong>{{ roomLabel(r) }}</strong><small>{{ r.type === 'direct' ? '私人会话' : r.type === 'lobby' ? '同一服务器成员' : `${r.members.length} 位成员` }}</small></span></button>
+          <button v-for="r in filteredRooms" :key="r.id" class="room-item" :class="{ active: selectedId === r.id }" @click="selectRoom(r.id)"><span class="avatar" :class="{ group: r.type !== 'direct' }">{{ r.type === 'direct' ? '◉' : '#' }}</span><span class="room-copy"><strong>{{ roomLabel(r) }}</strong><small>{{ r.type === 'direct' ? '私人会话' : r.type === 'lobby' ? '同一服务器成员' : `${r.members.length} 位成员` }}</small></span></button>
         </div>
         <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : apiConnected ? 'HTTP 消息同步正常（WebSocket 未连接）' : '正在连接服务器' }}</footer>
       </aside>
@@ -1042,15 +1051,71 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <div v-else class="chat-pane">
-        <header class="chat-head"><button class="mobile-back" type="button" aria-label="返回会话" @click="mobileChat = false">‹ 返回</button><div><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom?.type === 'direct' ? '一对一私聊' : '离线自动补发 · 本地保存历史' }}</small></div><button class="icon-button" title="刷新会话" @click="refresh">⟳</button></header>
+        <header class="chat-head tg-chat-head">
+          <button class="mobile-back tg-back" type="button" aria-label="返回会话" @click="mobileChat=false">‹</button>
+          <button class="tg-peer" type="button" @click="infoOpen=!infoOpen" title="查看会话资料">
+            <span class="avatar tg-peer-avatar" :class="{ group: activeRoom?.type !== 'direct' }">{{ activeRoom ? roomAvatar(activeRoom) : 'Z' }}</span>
+            <span class="tg-peer-details"><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom ? activeSubtitle : '欢迎使用 ZzzMessage' }}</small></span>
+          </button>
+          <div class="tg-header-actions">
+            <button class="tg-round-btn" title="搜索聊天" @click="chatSearch=activeRoom ? roomLabel(activeRoom) : '';mobileChat=false">⌕</button>
+            <button class="tg-round-btn" title="会话资料" @click="infoOpen=!infoOpen">⋮</button>
+          </div>
+        </header>
         <div ref="chatScroll" class="timeline">
           <div class="info-banner">消息会先由服务器保存到待投递队列，恢复连接后补发并留在本机；服务器收到收妥确认后删除待投递副本。当前不是端到端加密。</div>
           <p v-if="sortedMessages.length === 0" class="empty-chat">还没有本地聊天记录。发送第一条消息吧。</p>
-          <div v-for="m in sortedMessages" :key="m.id" class="message" :class="{ mine: m.sender === me.username }"><div class="bubble"><small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small><p>{{ m.text }}</p></div></div>
+          <div v-for="m in sortedMessages" :key="m.id" class="message" :class="{ mine: m.sender === me.username }">
+            <div class="bubble">
+              <small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small>
+              <p v-if="!m.attachment">{{ m.text }}</p>
+              <button v-else class="tg-attachment" type="button" @click="downloadAttachment(m.attachment)" :title="m.attachment.name">
+                <span>📎</span><span><strong>{{ m.attachment.name }}</strong><small>{{ fileSize(m.attachment.size) }} · 下载文件</small></span><span>↓</span>
+              </button>
+            </div>
+          </div>
         </div>
-        <form class="composer" @submit.prevent="send"><input v-model="draft" maxlength="4000"  :placeholder="'输入消息，按 Enter 发送（支持 HTTP 兜底）'" /><button type="submit" class="primary" :disabled="!draft.trim()">发送</button></form>
+        <div class="tg-composer-area">
+          <div v-if="emojiOpen" class="tg-emoji-panel" role="group" aria-label="表情选择器">
+            <button v-for="emoji in recentEmoji" :key="emoji" type="button" @click="insertEmoji(emoji)">{{ emoji }}</button>
+          </div>
+          <form class="composer tg-composer" @submit.prevent="send">
+            <button type="button" class="tg-round-btn" :aria-label="emojiOpen?'关闭表情':'选择表情'" @click="emojiOpen=!emojiOpen">☺</button>
+            <button type="button" class="tg-round-btn" title="发送文件（最多10MB）" :disabled="uploadBusy" @click="fileInput?.click()">📎</button>
+            <input ref="fileInput" type="file" class="tg-file-input" @change="uploadAttachment" />
+            <input v-model="draft" maxlength="4000" placeholder="输入消息…" aria-label="消息正文" />
+            <button type="submit" class="tg-send-btn" :disabled="!draft.trim() || uploadBusy">{{ uploadBusy ? '…' : '➤' }}</button>
+          </form>
+        </div>
         <div v-if="status" class="toast" role="alert">{{ status }} <button @click="status = ''" aria-label="关闭提示">×</button></div>
       </div>
+      <aside v-if="infoOpen && activeRoom && routePath === '/message'" class="tg-info">
+        <header class="tg-info-top">
+          <button class="tg-round-btn" @click="infoOpen=false" title="关闭">×</button>
+          <strong>{{ activeRoom.type==='group' ? '群组信息' : '会话信息' }}</strong>
+        </header>
+        <div class="tg-info-profile">
+          <span class="avatar tg-info-avatar">{{ roomAvatar(activeRoom) }}</span>
+          <h2>{{ roomLabel(activeRoom) }}</h2>
+          <p>{{ activeSubtitle }}</p>
+        </div>
+        <div class="tg-info-panel">
+          <h3>会话详情</h3>
+          <p>🆔　{{ activeRoom.id }}</p>
+          <p>🔒　消息仅对本会话成员开放</p>
+        </div>
+        <div v-if="activeRoom.type==='group'" class="tg-info-panel">
+          <h3>群成员 · {{ activeRoom.members.length }}</h3>
+          <p v-for="person in activeRoom.members" :key="person">👤　{{ users.find(u=>u.username===person)?.displayName || person }}</p>
+        </div>
+        <div class="tg-info-panel">
+          <h3>共享附件</h3>
+          <button v-for="m in sortedMessages.filter(m=>m.attachment)" :key="m.id" class="tg-shared-file" @click="downloadAttachment(m.attachment)">
+            📎 {{ m.attachment.name }}
+          </button>
+          <p v-if="!sortedMessages.some(m=>m.attachment)">这个会话暂无附件</p>
+        </div>
+      </aside>
     </section>
   </main>
 </template>
