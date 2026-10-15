@@ -145,3 +145,10 @@ cd web && npm run build
 新增 `/money` 三币种虚拟钱包：金币、银币、铜币。每天首次成功登录自动随机获得 **1 枚货币：金币 1%、银币 9%、铜币 90%**。日期以 UTC 为准；同账号跨设备或反复登录，当日只发放一次（与现实货币无关）。`/gift` 可使用对应币种直接购买礼物并赠送站内其他用户，包含防重复扣费的请求 ID、交易记账和收礼通知；当前没有充值、提现、真实支付或现金价值。
 
 **这些新功能目前仅在 GitHub main 源码中，尚未重新构建、测试和发布；已发布的 v0.2.0-beta.1 不包含它们。**
+
+
+## 外部 API Key 直接发送私聊（Hermes / 定时任务）
+
+支持独立接口 `POST /api/external/send`。调用方不必登录，只需提交 `Authorization: Bearer <EXTERNAL_SEND_KEY>`、JSON 的 `recipient` 与 `text`。服务器固定使用 `EXTERNAL_SEND_SENDER` 指定的**已注册机器人账号**发送私聊，自动创建与收件人的私聊房间，并走正常的 IndexedDB/离线队列、WebSocket 和通知投递。此 Key **仅可发送消息，不能调用登录态 API 或查询聊天历史**。
+
+将独立随机密钥及发送人添加到 .env（可通过 `EXTERNAL_SEND_RECIPIENTS` 限定收件人），未配置时接口返回 404、不影响原服务。详见 [外部发送接口使用指南](docs/EXTERNAL_API.md)。这些设置当前仅在 main 源码实现，原先打包的 EXE 不自动升级。

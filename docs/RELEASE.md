@@ -63,3 +63,10 @@ Android 厂商推送需要开发者资质及官方 SDK，Android APK 和鸿蒙�
 新增 `/login`、`/message`、`/friend`、`/setting` SPA 路由和离线补发；Windows 可使用 `start-lan.bat 43555` 自选端口，Docker 可使用 `APP_PORT=43555` 和 `BIND_HOST=指定局域网IP`。详见 [OFFLINE_AND_ROUTES.md](OFFLINE_AND_ROUTES.md)。v0.2.0-beta.1 发行包仍为旧版。
 
 本次修复中，Apple 推送返回非 2xx 时会在日志中显示 Apple 的安全错误原因（如 BadJwtToken），前端也会查询发送状态；Edge 本地注册需确认 localhost 与 127.0.0.1 均在精确 ALLOWED_ORIGINS 白名单中。详见 [PUSH.md](PUSH.md)。
+
+
+## 外部 Key 免登录消息 API
+
+main 源码增加 `POST /api/external/send`，需要独立 `EXTERNAL_SEND_KEY`（至少32位随机密钥）、`EXTERNAL_SEND_SENDER`（已注册专用机器人账号），可选 `EXTERNAL_SEND_RECIPIENTS` 限制发送目标。启动时检查配置，未配置时禁用。Docker Compose 同步透传以上三个环境变量。参见 [EXTERNAL_API.md](EXTERNAL_API.md)。
+
+**该接口在重新编译/打包新版程序前不可使用；旧 Windows EXE 不包含该路由。**
