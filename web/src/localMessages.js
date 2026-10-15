@@ -109,3 +109,19 @@ export async function loadAllMessages(server, username) {
     })
   } finally { db.close() }
 }
+
+// This deletes only this device's copy. It is NOT a Telegram-style revoke for
+// other participants; server-side pending copies and other devices are unchanged.
+export async function deleteLocalMessage(server, username, roomId, id) {
+  const db = await openDB()
+  const space = server + '|' + username + '|' + roomId
+  try {
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(STORE,'readwrite')
+      tx.objectStore(STORE).delete(space+'|'+id)
+      tx.oncomplete=()=>resolve()
+      tx.onerror=()=>reject(tx.error||Error('删除本地消息失败'))
+      tx.onabort=()=>reject(tx.error||Error('本地删除已中止'))
+    })
+  } finally {db.close()}
+}
