@@ -44,6 +44,10 @@ type Server struct {
 	historyRequests map[string]historyRequest
     sendMu sync.Mutex
     sendTimes map[string][]time.Time
+    externalEnabled bool
+    externalKeyHash [32]byte
+    externalSender string
+    externalRecipients map[string]bool
 }
 
 func NewServer(c Config) (*Server, error) {
@@ -153,6 +157,7 @@ func (s *Server) Handler() http.Handler {
     mux.HandleFunc("GET /api/messages/pending",s.auth(s.httpPending))
     mux.HandleFunc("POST /api/messages/send",s.auth(s.httpSend))
     mux.HandleFunc("POST /api/messages/ack",s.auth(s.httpAck))
+    mux.HandleFunc("POST /api/external/send",s.externalSend)
     mux.HandleFunc("GET /api/push/preferences",s.auth(s.getPushPreferences))
     mux.HandleFunc("PUT /api/push/preferences",s.auth(s.setPushPreferences))
 	mux.HandleFunc("GET /api/money", s.auth(s.moneyBalance))

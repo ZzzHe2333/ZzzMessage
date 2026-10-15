@@ -33,6 +33,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if err := app.ConfigureExternalSend(chat.ExternalSendConfig{
+        Key: os.Getenv("EXTERNAL_SEND_KEY"),
+        Sender: os.Getenv("EXTERNAL_SEND_SENDER"),
+        AllowedRecipients: strings.Split(os.Getenv("EXTERNAL_SEND_RECIPIENTS"), ","),
+    }); err != nil { log.Fatal(err) }
 	if err := app.ConfigurePush(os.Getenv("VAPID_PUBLIC_KEY"), os.Getenv("VAPID_PRIVATE_KEY"), os.Getenv("VAPID_SUBJECT")); err != nil {
 		log.Fatal(err)
 	}
