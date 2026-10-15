@@ -74,12 +74,20 @@ jobs:
       - name: Publish GitHub prerelease with all assets
         run: |
           set -euo pipefail
-          gh release create "$RELEASE_TAG" release-files/ZzzMessage-* release-files/SHA256SUMS.txt \
-            --repo "$GH_REPO" \
-            --target "$TARGET_COMMIT" \
-            --title "ZzzMessage v0.3.0-beta.1 · 离线同步 / 礼物金币 / Windows Linux Docker PWA" \
-            --notes-file RELEASE_NOTES.md \
-            --prerelease
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
+              --title "ZzzMessage v0.3.0-beta.1 · 离线同步 / 礼物金币 / Windows Linux Docker PWA" \
+              --notes-file RELEASE_NOTES.md \
+              --prerelease
+          else
+            gh release create "$RELEASE_TAG" release-files/ZzzMessage-* release-files/SHA256SUMS.txt \
+              --repo "$GH_REPO" \
+              --target "$TARGET_COMMIT" \
+              --title "ZzzMessage v0.3.0-beta.1 · 离线同步 / 礼物金币 / Windows Linux Docker PWA" \
+              --notes-file RELEASE_NOTES.md \
+              --prerelease
+          fi
       - name: Confirm all release assets
         run: |
           gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json url,tagName,isPrerelease,assets
