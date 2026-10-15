@@ -23,7 +23,14 @@ type ExternalSendConfig struct {
 // The designated sender is an ordinary account created once through the UI.
 // An empty key and sender leave the feature completely disabled.
 func (s *Server) ConfigureExternalSend(cfg ExternalSendConfig) error {
-    if cfg.Key == "" && cfg.Sender == "" && len(cfg.AllowedRecipients) == 0 { return nil }
+    if cfg.Key == "" && strings.TrimSpace(cfg.Sender) == "" {
+        for _,recipient:=range cfg.AllowedRecipients {
+            if strings.TrimSpace(recipient)!="" {
+                return errors.New("EXTERNAL_SEND_RECIPIENTS 配置后需要设置 EXTERNAL_SEND_KEY 和 EXTERNAL_SEND_SENDER")
+            }
+        }
+        return nil
+    }
     if len(cfg.Key) < 32 || len(cfg.Key) > 512 {
         return errors.New("EXTERNAL_SEND_KEY 必须是32-512位随机密钥")
     }
