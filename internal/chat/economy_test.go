@@ -133,6 +133,12 @@ func TestEconomyHTTPRequiresAccount(t *testing.T){
     handler.ServeHTTP(record,giftsReq)
     var gifts []GiftItem
     if err:=json.Unmarshal(record.Body.Bytes(),&gifts);err!=nil||len(gifts)!=6{t.Fatal("gift catalog HTTP",err,gifts)}
+    // The login reward is randomized; seed enough copper to test the HTTP gift path.
+    s.store.mu.Lock()
+    seeded:=s.store.state.Wallets["alice"]
+    seeded.Copper+=50
+    s.store.state.Wallets["alice"]=seeded
+    s.store.mu.Unlock()
     sent:=post(t,handler,"/api/gifts/send",map[string]string{
         "recipient":"bob","itemId":"flower","requestId":"abcdef0123456789abcdef0123456789",
     },alice)
