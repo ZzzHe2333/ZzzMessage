@@ -224,3 +224,19 @@
  .tg-info{width:100vw;top:0;bottom:0;right:0;z-index:20}
  .sidebar-foot{padding:12px;font-size:11px;justify-content:flex-start}
 }
+
+/* Keep Telegram-style panels below the iPhone notch and above Home Indicator. */
+@media (max-width:680px) {
+  @supports (padding-top: env(safe-area-inset-top)) {
+    .shell:has(.app) {
+      padding-top: max(8px, env(safe-area-inset-top)) !important;
+      padding-bottom: max(6px, env(safe-area-inset-bottom)) !important;
+      padding-left: env(safe-area-inset-left) !important;
+      padding-right: env(safe-area-inset-right) !important;
+      height: 100dvh !important;
+      min-height: 100dvh;
+      overflow: hidden;
+    }
+    .app,.app.info-open {height:100%;min-height:0}
+  }
+}

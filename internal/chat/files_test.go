@@ -5,7 +5,6 @@ import (
   "encoding/json"
   "io"
   "mime/multipart"
-  "net/http"
   "net/http/httptest"
   "os"
   "path/filepath"
