@@ -40,6 +40,8 @@ type Server struct {
 	recent   map[string][]time.Time
 	push *PushService
 	native *NativePushService
+	syncMu sync.Mutex
+	historyRequests map[string]historyRequest
 }
 
 func NewServer(c Config) (*Server, error) {
@@ -81,7 +83,7 @@ func NewServer(c Config) (*Server, error) {
         if !safe{return nil,fmt.Errorf("LAN CIDR outside private addresses: %q",entry)}
         cidrs=append(cidrs,prefix)
     }
-	s := &Server{store: c.Store, invite: c.InviteCode, secret: []byte(c.SessionSecret), origins: origins, lanOriginCIDRs:cidrs, recent: map[string][]time.Time{}}
+	s := &Server{store: c.Store, invite: c.InviteCode, secret: []byte(c.SessionSecret), origins: origins, lanOriginCIDRs:cidrs, recent: map[string][]time.Time{},historyRequests:make(map[string]historyRequest)}
 	s.hub = NewHub()
 	return s, nil
 }

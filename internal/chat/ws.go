@@ -53,6 +53,7 @@ func (h *Hub) broadcast(room Room, data []byte) {
 type Client struct {
 	conn     *websocket.Conn
 	username string
+	deviceID string
 	send     chan []byte
 	done     chan struct{}
 }
@@ -61,6 +62,11 @@ type incoming struct {
 	Token  string `json:"token"`
 	RoomID string `json:"roomId"`
 	ID string `json:"id"`
+	DeviceID string `json:"deviceId"`
+	TargetDevice string `json:"targetDevice"`
+	RequestID string `json:"requestId"`
+	Seq int `json:"seq"`
+	Messages []ChatMessage `json:"messages"`
 	Text   string `json:"text"`
 }
 
@@ -75,7 +81,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	conn.SetReadLimit(16384)
+	conn.SetReadLimit(131072)
 	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	var auth incoming
 	if err := conn.ReadJSON(&auth); err != nil || auth.Type != "auth" {
@@ -87,7 +93,12 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 		_ = conn.WriteJSON(map[string]string{"type": "error", "error": "登录已失效"})
 		return
 	}
-	c := &Client{conn: conn, username: username, send: make(chan []byte, 64), done: make(chan struct{})}
+    deviceID := auth.DeviceID
+    if !validDeviceID(deviceID) {
+        deviceID,err=randomID()
+        if err!=nil {return}
+    }
+	c := &Client{conn: conn, username: username, deviceID:deviceID, send: make(chan []byte, 64), done: make(chan struct{})}
 	s.hub.add(c)
 	defer s.hub.remove(c)
 	defer close(c.done)
@@ -132,6 +143,14 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
             if err:=s.store.AckMessage(username,p.ID);err!=nil {
                 log.Printf("chat ACK failed: %v",err)
             }
+        case "sync_request":
+            s.startHistorySync(c)
+        case "sync_chunk":
+            s.forwardHistoryChunk(c,p)
+        case "sync_chunk_ack":
+            s.forwardHistoryAck(c,p)
+        case "sync_done":
+            s.finishHistorySync(c,p)
 		default:
 			c.queue(map[string]any{"type": "error", "error": "不支持的消息类型"})
 		}
