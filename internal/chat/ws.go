@@ -60,6 +60,7 @@ type incoming struct {
 	Type   string `json:"type"`
 	Token  string `json:"token"`
 	RoomID string `json:"roomId"`
+	ID string `json:"id"`
 	Text   string `json:"text"`
 }
 
@@ -92,8 +93,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 	defer close(c.done)
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(70 * time.Second)) })
 	_ = conn.SetReadDeadline(time.Now().Add(70 * time.Second))
-	go c.writeLoop()
-	c.queue(map[string]any{"type": "ready", "username": username})
+	go c.writeLoop(s.store.PendingFor(username))
 	windowStart := time.Now()
 	count := 0
 	for {
@@ -116,23 +116,22 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 				c.queue(map[string]any{"type": "error", "error": "消息长度需为1-4000字"})
 				continue
 			}
-			room, ok := s.store.RoomForUser(p.RoomID, username)
-			if !ok {
-				c.queue(map[string]any{"type": "error", "error": "没有该会话的访问权限"})
-				continue
-			}
-			id, err := randomID()
-			if err != nil {
-				log.Printf("id generation failed: %v", err)
-				continue
-			}
-			msg := map[string]any{"type": "message", "id": id, "roomId": room.ID, "sender": username, "text": p.Text, "createdAt": time.Now().UTC().Format(time.RFC3339Nano)}
-			data, err := json.Marshal(msg)
-			if err == nil {
-				s.hub.broadcast(room, data)
-				s.queuePush(room, username)
-				s.queueNativePush(room, username)
-			}
+            room,msg,err:=s.store.QueueMessage(p.RoomID,username,p.Text)
+            if err!=nil {
+                log.Printf("offline queue failed: %v",err)
+                c.queue(map[string]any{"type":"error","error":"服务器保存消息失败"})
+                continue
+            }
+            data,err:=json.Marshal(msg)
+            if err==nil {
+                s.hub.broadcast(room,data)
+                s.queuePush(room,username)
+                s.queueNativePush(room,username)
+            }
+        case "ack":
+            if err:=s.store.AckMessage(username,p.ID);err!=nil {
+                log.Printf("chat ACK failed: %v",err)
+            }
 		default:
 			c.queue(map[string]any{"type": "error", "error": "不支持的消息类型"})
 		}
@@ -149,23 +148,30 @@ func (c *Client) queue(v any) {
 		c.conn.Close()
 	}
 }
-func (c *Client) writeLoop() {
-	ticker := time.NewTicker(25 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-c.done:
-			return
-		case data := <-c.send:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				return
-			}
-		case <-ticker.C:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
+func (c *Client) writeLoop(backlog []ChatMessage) {
+    writeJSON := func(v any) error {
+        data,err:=json.Marshal(v)
+        if err!=nil{return err}
+        _=c.conn.SetWriteDeadline(time.Now().Add(10*time.Second))
+        return c.conn.WriteMessage(websocket.TextMessage,data)
+    }
+    if writeJSON(map[string]any{"type":"ready","username":c.username})!=nil{return}
+    // Write backlog in stream order: don't overflow c.send's bounded buffer.
+    for _,message:=range backlog{
+        select{case <-c.done:return;default:}
+        if writeJSON(message)!=nil{return}
+    }
+    ticker:=time.NewTicker(25*time.Second)
+    defer ticker.Stop()
+    for{
+        select{
+        case <-c.done:return
+        case data:=<-c.send:
+            _=c.conn.SetWriteDeadline(time.Now().Add(10*time.Second))
+            if err:=c.conn.WriteMessage(websocket.TextMessage,data);err!=nil{return}
+        case <-ticker.C:
+            _=c.conn.SetWriteDeadline(time.Now().Add(10*time.Second))
+            if err:=c.conn.WriteMessage(websocket.PingMessage,nil);err!=nil{return}
+        }
+    }
 }
