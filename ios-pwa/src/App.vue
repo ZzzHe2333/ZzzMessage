@@ -174,9 +174,29 @@ function setRoomPreference(roomId,changes){
 function togglePinned(roomId){
   setRoomPreference(roomId,{pinned:!roomPinned(roomId)})
 }
-function toggleMuted(roomId){
-  // Per-device visual notification preference; not a server-wide push mute.
-  setRoomPreference(roomId,{muted:!roomMuted(roomId)})
+async function toggleMuted(roomId){
+  try{
+    const desired=!roomMuted(roomId)
+    const result=await request('/api/rooms/mutes',{
+      method:'PUT',body:JSON.stringify({roomId,muted:desired})
+    })
+    setRoomPreference(roomId,{muted:!!result.muted})
+    status.value=result.muted?'此会话的系统通知已静音（当前账号全部设备）':'此会话的系统通知已恢复'
+  }catch(err){showError(err)}
+}
+async function refreshServerMutes(){
+  if(!me.value)return
+  try{
+    const reply=await request('/api/rooms/mutes')
+    const updated={...chatPrefs.value}
+    for(const room of rooms.value){
+      updated[room.id]={...(updated[room.id]||{}),muted:!!reply.mutedRooms?.[room.id]}
+    }
+    chatPrefs.value=updated
+    localStorage.setItem(prefStorageKey(),JSON.stringify(updated))
+  }catch{
+    // Older backends don't have this route. Keep local state for migration.
+  }
 }
 function chatIsVisible(){
   return routePath.value==='/message' &&
@@ -511,6 +531,7 @@ async function initialize() {
   restoreChatPreferences()
   await rebuildHistoryIndex()
   await refresh()
+  await refreshServerMutes()
   if (!rooms.value.some(r => r.id === selectedId.value)) selectedId.value = 'lobby'
   await selectRoom(selectedId.value)
   mobileChat.value = false
@@ -1247,7 +1268,7 @@ onBeforeUnmount(() => {
             @click="selectRoom(r.id)" @keydown.enter.prevent="selectRoom(r.id)">
             <span class="avatar" :class="{ group: r.type !== 'direct' }">{{ roomAvatar(r) }}</span>
             <span class="room-copy tg-room-copy">
-              <span class="tg-room-name"><strong>{{ roomLabel(r) }}</strong><span v-if="roomPinned(r.id)" title="本机置顶">📌</span><span v-if="roomMuted(r.id)" title="本机静音标记">🔕</span></span>
+              <span class="tg-room-name"><strong>{{ roomLabel(r) }}</strong><span v-if="roomPinned(r.id)" title="本机置顶">📌</span><span v-if="roomMuted(r.id)" title="此账号系统通知已静音">🔕</span></span>
               <small class="tg-room-preview">{{ previewRoom(r.id) }}</small>
             </span>
             <span class="tg-room-right">
@@ -1255,7 +1276,7 @@ onBeforeUnmount(() => {
               <span v-if="roomUnread(r.id)" class="tg-unread" :class="{ muted: roomMuted(r.id) }">{{ roomUnread(r.id)>99?'99+':roomUnread(r.id) }}</span>
               <span class="tg-room-tools">
                 <button type="button" @click.stop="togglePinned(r.id)" :title="roomPinned(r.id)?'取消置顶':'本机置顶'">{{ roomPinned(r.id)?'取消置顶':'置顶' }}</button>
-                <button type="button" @click.stop="toggleMuted(r.id)" :title="roomMuted(r.id)?'取消静音标记':'本机静音标记'">{{ roomMuted(r.id)?'取消静音':'静音' }}</button>
+                <button type="button" @click.stop="toggleMuted(r.id)" :title="roomMuted(r.id)?'恢复此会话通知':'静音此会话通知（所有设备）'">{{ roomMuted(r.id)?'取消静音':'静音' }}</button>
               </span>
             </span>
           </div>
