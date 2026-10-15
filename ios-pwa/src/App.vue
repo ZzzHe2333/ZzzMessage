@@ -23,6 +23,8 @@ const selectedId = ref('lobby')
 const messages = ref([])
 const draft = ref('')
 const connection = ref('offline')
+const apiConnected = ref(false)
+const pushPreviewEnabled = ref(true)
 const status = ref('')
 const busy = ref(false)
 const tab = ref('chats')
@@ -63,6 +65,9 @@ let pushRegistration = null
 const chatScroll = ref(null)
 let socket = null
 let retryTimer = null
+let pollingTimer = null
+let pollingBusy = false
+let roomLoadSequence = 0
 let reconnectDelay = 1500
 let liveSession = 0
 
@@ -212,8 +217,11 @@ async function initialize() {
   await selectRoom(selectedId.value)
   mobileChat.value = false
   localDeviceID()
+  apiConnected.value = true
   connect()
+  startPendingPolling()
   void autoDailyCheckIn()
+  void readPreviewPreference()
   if (isNativeAndroid) {
     void restoreNativeRegistration()
   } else {
@@ -228,17 +236,28 @@ async function refresh() {
   } catch (err) { showError(err) }
 }
 async function selectRoom(id) {
+  const sequence = ++roomLoadSequence
   selectedId.value = id
   navigate('/message')
   mobileChat.value = true
   messages.value = []
   if (!me.value) return
-  try { const selected = id; const loaded = await loadMessages(server.value, me.value.username, id); if (selectedId.value === selected) messages.value = loaded }
-  catch (err) { showError(err) }
+  try {
+    const loaded = await loadMessages(server.value,me.value.username,id)
+    if (sequence !== roomLoadSequence || selectedId.value !== id) return
+    // Merge arrivals that occurred while IndexedDB was loading; never
+    // overwrite or lose a live message already persisted by the receiver.
+    const unique = new Map(loaded.map(m=>[m.id,m]))
+    for (const m of messages.value) if(m.roomId===id) unique.set(m.id,m)
+    messages.value = Array.from(unique.values())
+  } catch (err) { showError(err) }
   await scrollBottom()
 }
 async function scrollBottom() { await nextTick(); if (chatScroll.value) chatScroll.value.scrollTop = chatScroll.value.scrollHeight }
 function disconnect() {
+  clearInterval(pollingTimer)
+  pollingTimer = null
+  apiConnected.value = false
   liveSession++
   clearTimeout(retryTimer); retryTimer = null
   if (socket) { const old = socket; socket = null; old.onclose = null; old.close() }
@@ -303,17 +322,7 @@ function connect() {
     }
     else if (data.type === 'error') status.value = data.error
     else if (data.type === 'message') {
-      // Persist to local IndexedDB BEFORE acknowledging server-side queue deletion.
-      // Duplicate replay uses the message ID as the indexedDB key.
-      try { await keepMessage(server.value, me.value.username, data) }
-      catch (err) { showError(err); return }
-      if (generation === liveSession && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'ack', id: data.id }))
-      }
-      if (data.roomId === selectedId.value && !messages.value.some(m => m.id === data.id)) {
-        messages.value.push(data)
-        await scrollBottom()
-      }
+      await acceptMessage(data)
     }
   }
   ws.onclose = () => {
@@ -322,6 +331,76 @@ function connect() {
     retryTimer = setTimeout(() => { reconnectDelay = Math.min(reconnectDelay * 1.7, 15000); connect() }, reconnectDelay)
   }
   ws.onerror = () => { if (generation === liveSession) connection.value = 'offline' }
+}
+// Polling runs alongside WebSocket. DDNSTO and mobile networks may deliver
+// Web Push correctly while blocking long-lived WebSocket upgrades.
+function startPendingPolling(){
+  clearInterval(pollingTimer)
+  pollingTimer=setInterval(()=>{void pollPendingMessages()},4000)
+  void pollPendingMessages()
+}
+async function acceptMessage(message){
+  if(!me.value || !message?.id || !message?.roomId) return
+  const account=me.value.username
+  const origin=server.value
+  try {
+    await keepMessage(origin,account,message)
+  } catch(err) {
+    showError(Error('本地保存聊天记录失败：'+(err?.message || err)))
+    return
+  }
+  if (me.value?.username!==account || server.value!==origin) return
+  if(message.roomId===selectedId.value && !messages.value.some(m=>m.id===message.id)){
+    messages.value.push(message)
+    await scrollBottom()
+  }
+  // ACK only after IndexedDB commit; on failure the server replays safely.
+  try {
+    await request('/api/messages/ack',{
+      method:'POST',body:JSON.stringify({id:message.id})
+    })
+  } catch {
+    if(socket?.readyState===WebSocket.OPEN) {
+      try {socket.send(JSON.stringify({type:'ack',id:message.id}))} catch {}
+    }
+  }
+}
+async function pollPendingMessages(){
+  if(pollingBusy || !token.value || !me.value || document.visibilityState==='hidden') return
+  pollingBusy=true
+  try {
+    const reply=await request('/api/messages/pending')
+    apiConnected.value=true
+    if(Array.isArray(reply.messages)){
+      for(const msg of reply.messages){await acceptMessage(msg)}
+    }
+  }catch(err){
+    apiConnected.value=false
+    // Avoid an alarming toast every four seconds while offline.
+    if(connection.value!=='online' && !status.value)
+      status.value='HTTP 消息同步不可用：'+(err?.message||err)
+  }finally{pollingBusy=false}
+}
+async function readPreviewPreference(){
+  try{
+    const v=await request('/api/push/preferences')
+    pushPreviewEnabled.value=v.preview!==false
+  }catch{}
+}
+async function savePreviewPreference(enabled){
+  try{
+    const result=await request('/api/push/preferences',{
+      method:'PUT',body:JSON.stringify({preview:enabled})
+    })
+    pushPreviewEnabled.value=result.preview!==false
+    pushStatus.value=pushPreviewEnabled.value?'通知将显示发送人及消息摘要':'通知已隐藏聊天正文'
+  }catch(err){pushStatus.value=err?.message||String(err)}
+}
+function onPushOpen(event){
+  if(event.data?.type!=='zzzmessage:open-room')return
+  const id=event.data.roomId
+  if(rooms.value.some(r=>r.id===id))void selectRoom(id)
+  void pollPendingMessages()
 }
 function requestHistorySync() {
   if (!socket || socket.readyState !== WebSocket.OPEN || !me.value) {
@@ -436,11 +515,19 @@ async function purchaseGift(item) {
 function giftCurrencyName(code) {
   return ({ gold:'金币',silver:'银币',copper:'铜币' })[code] || code
 }
-function send() {
-  const text = draft.value.trim()
-  if (!text || [...text].length > 4000 || !socket || socket.readyState !== WebSocket.OPEN || connection.value !== 'online') return
-  socket.send(JSON.stringify({ type: 'message', roomId: selectedId.value, text }))
-  draft.value = ''
+async function send() {
+  const text=draft.value.trim()
+  if(!text || [...text].length>4000 || !me.value) return
+  const roomID=selectedId.value
+  try {
+    // HTTP is compatible with all HTTPS reverse proxies; WebSocket remains
+    // an optional low-latency delivery channel.
+    const message=await request('/api/messages/send',{
+      method:'POST',body:JSON.stringify({roomId:roomID,text})
+    })
+    draft.value=''
+    await acceptMessage(message)
+  }catch(err){showError(err)}
 }
 async function direct(other) {
   status.value = ''
@@ -679,6 +766,9 @@ async function changeServer() {
 function formatTime(v) { try { return new Date(v).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' }) } catch { return '' } }
 onMounted(async () => {
   window.addEventListener('popstate', handlePopState)
+  navigator.serviceWorker?.addEventListener('message',onPushOpen)
+  document.addEventListener('visibilitychange',onVisibilityChange)
+  const initialRoomFromPush=new URLSearchParams(location.search).get('room')
   if (location.pathname === '/' || !ROUTES.has(location.pathname)) navigate('/login', true)
   const wantedPath = routePath.value
   window.addEventListener('zzz:native-push', onNativePushEvent)
@@ -692,10 +782,18 @@ onMounted(async () => {
       await resume()
     }
   } catch { configured.value = false }
-  if (me.value) navigate(wantedPath === '/login' ? '/message' : wantedPath, true)
-  else navigate('/login',true)
+  if (me.value) {
+    navigate(wantedPath === '/login' ? '/message' : wantedPath, true)
+    if(initialRoomFromPush && rooms.value.some(r=>r.id===initialRoomFromPush))
+      await selectRoom(initialRoomFromPush)
+  } else navigate('/login',true)
 })
+function onVisibilityChange(){
+  if(document.visibilityState==='visible')void pollPendingMessages()
+}
 onBeforeUnmount(() => {
+  navigator.serviceWorker?.removeEventListener('message',onPushOpen)
+  document.removeEventListener('visibilitychange',onVisibilityChange)
   window.removeEventListener('popstate', handlePopState)
   window.removeEventListener('zzz:native-push', onNativePushEvent)
   window.removeEventListener('zzz:native-push-error', onNativePushError)
@@ -766,7 +864,8 @@ onBeforeUnmount(() => {
             <p v-if="!nativeSupported" class="hint">此 Android 设备暂不在首批厂商推送支持范围。</p>
           </template>
           <template v-else>
-          <p class="hint">系统通知只显示「收到新消息」，不包含正文。消息离线期间会在恢复连接后补发。</p>
+          <p class="hint">系统通知默认显示发送人和消息摘要，锁屏上也可能直接显示正文；关闭下方选项可隐藏预览。</p>
+          <label class="member"><input type="checkbox" :checked="pushPreviewEnabled" @change="savePreviewPreference($event.target.checked)" /> 显示通知消息预览（默认开启）</label>
           <p v-if="onIOS && !installedPWA" class="hint">iPhone：Safari 访问 HTTPS 网站 → 分享 → 添加到主屏幕 → 从桌面图标启动 → 登录后开启通知。需要 iOS 16.4+。</p>
           <p v-else class="hint">Android 和桌面浏览器：使用 HTTPS 站点或 PWA，允许网站通知。实际送达取决于系统和浏览器。</p>
           <p class="hint" role="status">{{ pushStatus }}</p>
@@ -797,7 +896,7 @@ onBeforeUnmount(() => {
           <div class="list-title">聊天会话 <button class="link" @click="newGroup = true; refresh()">+ 新建群聊</button></div>
           <button v-for="r in rooms" :key="r.id" class="room-item" :class="{ active: selectedId === r.id }" @click="selectRoom(r.id)"><span class="avatar" :class="{ group: r.type !== 'direct' }">{{ r.type === 'direct' ? '◉' : '#' }}</span><span class="room-copy"><strong>{{ roomLabel(r) }}</strong><small>{{ r.type === 'direct' ? '私人会话' : r.type === 'lobby' ? '同一服务器成员' : `${r.members.length} 位成员` }}</small></span></button>
         </div>
-        <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : connection === 'connecting' ? '正在连接' : '连接中断，将自动重试' }}</footer>
+        <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : apiConnected ? 'HTTP 消息同步正常（WebSocket 未连接）' : '正在连接服务器' }}</footer>
       </aside>
       <section v-if="routePath === '/money'" class="economy-pane">
         <header class="economy-header">
@@ -857,7 +956,7 @@ onBeforeUnmount(() => {
           <p v-if="sortedMessages.length === 0" class="empty-chat">还没有本地聊天记录。发送第一条消息吧。</p>
           <div v-for="m in sortedMessages" :key="m.id" class="message" :class="{ mine: m.sender === me.username }"><div class="bubble"><small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small><p>{{ m.text }}</p></div></div>
         </div>
-        <form class="composer" @submit.prevent="send"><input v-model="draft" maxlength="4000" :disabled="connection !== 'online'" :placeholder="connection === 'online' ? '输入消息，按 Enter 发送' : '等待服务器连接...'" /><button type="submit" class="primary" :disabled="!draft.trim() || connection !== 'online'">发送</button></form>
+        <form class="composer" @submit.prevent="send"><input v-model="draft" maxlength="4000"  :placeholder="'输入消息，按 Enter 发送（支持 HTTP 兜底）'" /><button type="submit" class="primary" :disabled="!draft.trim()">发送</button></form>
         <div v-if="status" class="toast" role="alert">{{ status }} <button @click="status = ''" aria-label="关闭提示">×</button></div>
       </div>
     </section>
