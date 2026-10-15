@@ -84,7 +84,7 @@ func (s *Server) Middleware(next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Origin", o)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		}
 		if r.Method == http.MethodOptions {
