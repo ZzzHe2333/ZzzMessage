@@ -16,15 +16,19 @@ type ChatMessage struct {
   Sender string `json:"sender"`
   Text string `json:"text"`
   CreatedAt string `json:"createdAt"`
+  Attachment *Attachment `json:"attachment,omitempty"`
 }
 func (s *Store) QueueMessage(roomID,sender,text string)(Room,ChatMessage,error){
+ return s.QueueAttachmentMessage(roomID,sender,text,nil)
+}
+func (s *Store) QueueAttachmentMessage(roomID,sender,text string,attachment *Attachment)(Room,ChatMessage,error){
  s.mu.Lock();defer s.mu.Unlock()
  room,ok:=s.state.Rooms[roomID]
  if !ok||!member(room,sender){return Room{},ChatMessage{},ErrInvalid}
  if _,ok:=s.state.Users[sender];!ok{return Room{},ChatMessage{},ErrNotFound}
  id,err:=randomID();if err!=nil{return Room{},ChatMessage{},err}
  now:=time.Now().UTC()
- msg:=ChatMessage{Type:"message",ID:id,RoomID:roomID,Sender:sender,Text:text,CreatedAt:now.Format(time.RFC3339Nano)}
+ msg:=ChatMessage{Type:"message",ID:id,RoomID:roomID,Sender:sender,Text:text,CreatedAt:now.Format(time.RFC3339Nano),Attachment:attachment}
  recipients:=room.Members
  if room.Type=="lobby"{
   recipients=make([]string,0,len(s.state.Users))
@@ -45,8 +49,19 @@ func (s *Store) QueueMessage(roomID,sender,text string)(Room,ChatMessage,error){
    next[user]=append([]ChatMessage(nil),next[user][len(next[user])-maxPendingPerAccount:]...)
   }
  }
+ oldAttachments:=s.state.Attachments
+ if attachment!=nil {
+   copyAttachments:=make(map[string]StoredAttachment,len(oldAttachments)+1)
+   for key,value:=range oldAttachments {copyAttachments[key]=value}
+   copyAttachments[attachment.ID]=StoredAttachment{Attachment:*attachment,RoomID:roomID,Sender:sender}
+   s.state.Attachments=copyAttachments
+ }
  s.state.Pending=next
- if err:=s.saveLocked();err!=nil{s.state.Pending=old;return Room{},ChatMessage{},err}
+ if err:=s.saveLocked();err!=nil{
+   s.state.Pending=old
+   s.state.Attachments=oldAttachments
+   return Room{},ChatMessage{},err
+ }
  return room,msg,nil
 }
 func (s *Store) PendingFor(user string)[]ChatMessage{

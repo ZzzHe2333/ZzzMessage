@@ -158,6 +158,8 @@ func (s *Server) Handler() http.Handler {
     mux.HandleFunc("POST /api/messages/send",s.auth(s.httpSend))
     mux.HandleFunc("POST /api/messages/ack",s.auth(s.httpAck))
     mux.HandleFunc("POST /api/external/send",s.externalSend)
+    mux.HandleFunc("POST /api/files/upload",s.auth(s.uploadFile))
+    mux.HandleFunc("GET /api/files/{id}",s.auth(s.downloadFile))
     mux.HandleFunc("GET /api/push/preferences",s.auth(s.getPushPreferences))
     mux.HandleFunc("PUT /api/push/preferences",s.auth(s.setPushPreferences))
 	mux.HandleFunc("GET /api/money", s.auth(s.moneyBalance))
