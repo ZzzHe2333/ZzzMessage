@@ -105,6 +105,13 @@ function goMenu(target) {
   if (target==='/friend') void refresh()
   navigate(target)
 }
+function openNewGroup() {
+  menuOpen.value=false
+  navigate('/message')
+  showSettings.value=false
+  newGroup.value=true
+  void refresh()
+}
 function insertEmoji(emoji){
   draft.value += emoji
   emojiOpen.value=false
@@ -934,7 +941,7 @@ onBeforeUnmount(() => {
           <div v-if="menuOpen" class="tg-menu" role="menu">
             <button @click="goMenu('/message')">💬　全部聊天</button>
             <button @click="goMenu('/friend')">👥　联系人</button>
-            <button @click="newGroup=true; menuOpen=false; refresh()">✚　新建群聊</button>
+            <button @click="openNewGroup">✚　新建群聊</button>
             <button @click="goMenu('/gift')">🎁　礼物商店</button>
             <button @click="goMenu('/money')">🪙　我的钱包</button>
             <button @click="goMenu('/setting')">⚙　设置</button>
@@ -943,7 +950,7 @@ onBeforeUnmount(() => {
         </header>
         <div class="tg-sidebar-title">
           <strong>{{ routePath === '/friend' ? '联系人' : routePath === '/setting' ? '设置' : newGroup ? '新建群聊' : '全部聊天' }}</strong>
-          <button v-if="!newGroup && !showSettings" class="tg-round-btn" title="新建群聊" @click="newGroup=true; refresh()">＋</button>
+          <button v-if="!newGroup && !showSettings" class="tg-round-btn" title="新建群聊" @click="openNewGroup">＋</button>
         </div>
         <div v-if="showSettings" class="sidebar-body">
           <h3>设置</h3>
@@ -994,7 +1001,7 @@ onBeforeUnmount(() => {
           <p v-if="!users.length" class="empty-note">目前还没有其他成员</p>
         </div>
         <div v-else class="room-list">
-          <div class="list-title">聊天会话 <button class="link" @click="newGroup = true; refresh()">+ 新建群聊</button></div>
+          <div class="list-title">聊天会话 <button class="link" @click="openNewGroup">+ 新建群聊</button></div>
           <button v-for="r in filteredRooms" :key="r.id" class="room-item" :class="{ active: selectedId === r.id }" @click="selectRoom(r.id)"><span class="avatar" :class="{ group: r.type !== 'direct' }">{{ r.type === 'direct' ? '◉' : '#' }}</span><span class="room-copy"><strong>{{ roomLabel(r) }}</strong><small>{{ r.type === 'direct' ? '私人会话' : r.type === 'lobby' ? '同一服务器成员' : `${r.members.length} 位成员` }}</small></span></button>
         </div>
         <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : apiConnected ? 'HTTP 消息同步正常（WebSocket 未连接）' : '正在连接服务器' }}</footer>
