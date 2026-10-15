@@ -210,11 +210,11 @@ func (svc *PushService) recordTestResult(user,id string,status int,reason string
   svc.tests[user]=current
 }
 
-var pushReasonPattern=regexp.MustCompile(\`^[A-Za-z][A-Za-z0-9_-]{0,63}$\`)
+var pushReasonPattern=regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{0,63}$`)
 func pushProviderReason(body io.Reader)string{
   bytes,err:=io.ReadAll(io.LimitReader(body,2048))
   if err!=nil{return ""}
-  var payload struct{Reason string \`json:"reason"\`}
+  var payload struct{Reason string `json:"reason"`}
   if json.Unmarshal(bytes,&payload)==nil && pushReasonPattern.MatchString(payload.Reason) {
     return payload.Reason
   }

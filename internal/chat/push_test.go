@@ -111,12 +111,12 @@ func TestPushTestReportsProvider403WithoutSecrets(t *testing.T){
   key,public,err:=webpush.GenerateVAPIDKeys()
   if err!=nil{t.Fatal(err)}
   if err:=s.ConfigurePush(public,key,"https://chat.example.com");err!=nil{t.Fatal(err)}
-  s.push.httpClient.Transport=fakeApplePushTransport{code:403,reply:\`{"reason":"BadJwtToken"}\`}
+  s.push.httpClient.Transport=fakeApplePushTransport{code:403,reply:`{"reason":"BadJwtToken"}`}
   sub:=validTestPushSubscription(t,"https://web.push.apple.com/test/1234")
   if err:=s.store.SavePush("alice",sub);err!=nil{t.Fatal(err)}
   sent:=post(t,s.Handler(),"/api/push/test",nil,alice)
   if sent.Code!=200{t.Fatalf("test enqueue failed: %d %s",sent.Code,sent.Body.String())}
-  var queued struct{Queued int \`json:"queued"\`;TestID string \`json:"testId"\`}
+  var queued struct{Queued int `json:"queued"`;TestID string `json:"testId"`}
   if err:=json.Unmarshal(sent.Body.Bytes(),&queued);err!=nil||queued.Queued!=1||len(queued.TestID)!=32{
     t.Fatalf("queue response: %+v %v",queued,err)
   }
@@ -145,8 +145,8 @@ func TestPushTestReportsProvider403WithoutSecrets(t *testing.T){
   if unauth.Code!=401{t.Fatal("status not protected by login")}
 }
 func TestPushProviderRejectReasonFiltered(t *testing.T){
-  if reason:=pushProviderReason(strings.NewReader(\`{"reason":"BadJwtToken"}\`));reason!="BadJwtToken"{t.Fatal(reason)}
-  for _,payload:=range []string{\`{"reason":"<img src=x>"}\`,\`{"reason":"private key material"}\`,\`{"reason":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\`}{
+  if reason:=pushProviderReason(strings.NewReader(`{"reason":"BadJwtToken"}`));reason!="BadJwtToken"{t.Fatal(reason)}
+  for _,payload:=range []string{`{"reason":"<img src=x>"}`,`{"reason":"private key material"}`,`{"reason":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}`}{
     if got:=pushProviderReason(strings.NewReader(payload));got!=""{t.Fatalf("unsafe provider reason: %q",got)}
   }
 }
