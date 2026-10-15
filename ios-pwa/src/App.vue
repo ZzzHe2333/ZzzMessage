@@ -124,13 +124,23 @@ function localDeviceID() {
 function savedTokenKey() { return `zzzmessage.token:${server.value}` }
 function showError(err) { status.value = err?.message || '操作失败' }
 async function request(path, options = {}) {
-  const response = await fetch(server.value + path, {
-    ...options,
-    headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}), ...options.headers },
-    cache: 'no-store'
-  })
+  let response
+  try {
+    response = await fetch(server.value + path, {
+      ...options,
+      headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(token.value ? { Authorization: `Bearer ${token.value}` } : {}), ...options.headers },
+      cache: 'no-store'
+    })
+  } catch (err) {
+    throw Error('网络请求失败，请检查后端服务、HTTPS 和 Origin 白名单：' + (err?.message || String(err)))
+  }
   const body = await response.json().catch(() => ({}))
-  if (!response.ok) throw Error(body.error || `HTTP ${response.status}`)
+  if (!response.ok) {
+    const detail = body.error || (response.status === 403
+      ? '服务器拒绝访问。请检查邀请码及 ALLOWED_ORIGINS 是否包含当前网页地址。'
+      : 'HTTP ' + response.status)
+    throw Error(detail)
+  }
   return body
 }
 async function testServer() {
@@ -557,8 +567,33 @@ async function sendTestPush() {
   pushStatus.value = ''
   try {
     const reply = await request('/api/push/test', { method: 'POST' })
-    pushStatus.value = reply.queued ? '测试推送已入队，请检查系统通知、网络及专注模式。' : '当前没有可用的推送订阅。'
-  } catch (err) { pushStatus.value = err.message }
+    if (!reply.queued) {
+      pushStatus.value = '当前没有可用的推送订阅。'
+      return
+    }
+    pushStatus.value = '已提交 ' + reply.queued + ' 条测试推送，正在等待推送服务响应…'
+    // /api/push/test returns an asynchronous queue result, NOT proof
+    // of delivery. Show the provider HTTP result after the workers finish.
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      if (!me.value) break
+      const state = await request('/api/push/test-status')
+      if (state.id !== reply.testId) break
+      if (state.done < state.queued) continue
+      if (state.failed > 0) {
+        const reason = state.reason ? '，错误：' + state.reason : ''
+        let hint = ''
+        if (state.lastStatus === 403) {
+          hint = '。Apple 返回认证失败，请检查 VAPID_SUBJECT 是否为有效的邮箱或 HTTPS 地址，并确认推送订阅与 VAPID 公钥对应。'
+        }
+        pushStatus.value = '推送服务拒绝了 ' + state.failed + ' 条请求，HTTP ' + state.lastStatus + reason + hint
+      } else {
+        pushStatus.value = '推送服务已接受 ' + state.delivered + ' 条请求。若未显示通知，请检查 iPhone 的通知权限与专注模式。'
+      }
+      return
+    }
+    pushStatus.value = '服务器尚未收到完整的推送服务结果，请稍后查看服务端日志。'
+  } catch (err) { pushStatus.value = '测试推送失败：' + (err?.message || String(err)) }
 }
 async function registerNativeDevice(device) {
   if (!me.value || !device?.provider || !device?.token) return
