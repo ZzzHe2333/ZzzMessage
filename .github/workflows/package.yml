@@ -1,0 +1,67 @@
+name: Package (on request)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'build-request/**'
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Go
+        run: |
+          go mod tidy
+          go test ./...
+          go vet ./...
+      - name: Build Web
+        working-directory: web
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Build iPhone PWA
+        working-directory: ios-pwa
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+      - name: Assemble compiled distributions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p packages stage/ZzzMessage-windows-amd64/web stage/ZzzMessage-linux-amd64/web stage/ZzzMessage-linux-arm64/web
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-windows-amd64/ZzzMessage.exe ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-amd64/zzzmessage ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-arm64/zzzmessage ./cmd/server
+          for target in windows-amd64 linux-amd64 linux-arm64; do
+            cp -R web/dist/. "stage/ZzzMessage-$target/web/"
+            cp .env.example "stage/ZzzMessage-$target/.env.example"
+            cp docs/RELEASE.md "stage/ZzzMessage-$target/README.md"
+          done
+          cp scripts/start-windows.ps1 stage/ZzzMessage-windows-amd64/start.ps1
+          cp scripts/start-linux.sh stage/ZzzMessage-linux-amd64/start.sh
+          cp scripts/start-linux.sh stage/ZzzMessage-linux-arm64/start.sh
+          chmod +x stage/ZzzMessage-linux-amd64/{start.sh,zzzmessage} stage/ZzzMessage-linux-arm64/{start.sh,zzzmessage}
+          (cd stage && zip -qr ../packages/ZzzMessage-Windows-amd64.zip ZzzMessage-windows-amd64)
+          (cd stage && tar -czf ../packages/ZzzMessage-Linux-amd64.tar.gz ZzzMessage-linux-amd64)
+          (cd stage && tar -czf ../packages/ZzzMessage-Linux-arm64.tar.gz ZzzMessage-linux-arm64)
+          (cd web/dist && zip -qr ../../packages/ZzzMessage-Web-static.zip .)
+          (cd ios-pwa/dist && zip -qr ../../packages/ZzzMessage-iPhone-PWA.zip .)
+          tar -czf packages/ZzzMessage-Docker-source.tar.gz --exclude='node_modules' Dockerfile compose.yaml .env.example go.mod cmd internal web
+          (cd packages && sha256sum *.zip *.tar.gz > SHA256SUMS.txt)
+          ls -lh packages/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZzzMessage-cross-platform-packages
+          path: packages/*
+          if-no-files-found: error
+          retention-days: 30
