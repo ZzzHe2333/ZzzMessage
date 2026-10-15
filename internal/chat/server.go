@@ -42,6 +42,8 @@ type Server struct {
 	native *NativePushService
 	syncMu sync.Mutex
 	historyRequests map[string]historyRequest
+    sendMu sync.Mutex
+    sendTimes map[string][]time.Time
 }
 
 func NewServer(c Config) (*Server, error) {
@@ -83,7 +85,7 @@ func NewServer(c Config) (*Server, error) {
         if !safe{return nil,fmt.Errorf("LAN CIDR outside private addresses: %q",entry)}
         cidrs=append(cidrs,prefix)
     }
-	s := &Server{store: c.Store, invite: c.InviteCode, secret: []byte(c.SessionSecret), origins: origins, lanOriginCIDRs:cidrs, recent: map[string][]time.Time{},historyRequests:make(map[string]historyRequest)}
+	s := &Server{store: c.Store, invite: c.InviteCode, secret: []byte(c.SessionSecret), origins: origins, lanOriginCIDRs:cidrs, recent: map[string][]time.Time{},historyRequests:make(map[string]historyRequest),sendTimes:make(map[string][]time.Time)}
 	s.hub = NewHub()
 	return s, nil
 }
@@ -148,6 +150,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/rooms", s.auth(s.createGroup))
 	mux.HandleFunc("POST /api/direct", s.auth(s.createDirect))
 	mux.HandleFunc("GET /api/ws", s.websocket)
+    mux.HandleFunc("GET /api/messages/pending",s.auth(s.httpPending))
+    mux.HandleFunc("POST /api/messages/send",s.auth(s.httpSend))
+    mux.HandleFunc("POST /api/messages/ack",s.auth(s.httpAck))
+    mux.HandleFunc("GET /api/push/preferences",s.auth(s.getPushPreferences))
+    mux.HandleFunc("PUT /api/push/preferences",s.auth(s.setPushPreferences))
 	mux.HandleFunc("GET /api/money", s.auth(s.moneyBalance))
 	mux.HandleFunc("POST /api/money/daily", s.auth(s.moneyDaily))
 	mux.HandleFunc("GET /api/gifts", s.auth(s.giftCatalog))

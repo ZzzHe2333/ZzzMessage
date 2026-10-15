@@ -78,6 +78,9 @@ type pushDelivery struct {
   user string
   subscription webpush.Subscription
   testID string
+  title string
+  body string
+  roomID string
 }
 
 // Progress is stored per authenticated user only and contains no endpoint,
@@ -220,32 +223,79 @@ func (s *Server) enqueuePush(j pushDelivery) bool {
   if s.push==nil{return false}
   select {case s.push.jobs<-j:return true;default:return false}
 }
-func (s *Server) queuePush(room Room, sender string) {
-  if s.push==nil{return}
-  recipients:=room.Members
-  if room.Type=="lobby" {
-    for _,person:=range s.store.Users(sender) { recipients=append(recipients,person.Username) }
-  }
-  for _,username:=range recipients {
-    if username==sender {continue}
-    subs:=s.store.PushFor(username)
-    if len(subs)==0 {continue}
-    s.push.mu.Lock()
-    // Coalesce frequent notifications; never enqueue message text.
-    now:=time.Now()
-    if now.Sub(s.push.last[username])<8*time.Second {
-      s.push.mu.Unlock()
-      continue
-    }
-    s.push.last[username]=now
-    s.push.mu.Unlock()
-    for _,sub:=range subs {s.enqueuePush(pushDelivery{user:username,subscription:sub})}
-  }
+// Notification content is visible on the lock screen by default.
+// Each recipient may opt out of previews in authenticated settings.
+func (s *Store) pushPreviewAllowed(user string)bool{
+ s.mu.RLock();defer s.mu.RUnlock()
+ return !s.state.PushPreviewsDisabled[user]
+}
+func (s *Store) SetPushPreview(user string,enabled bool)error{
+ s.mu.Lock();defer s.mu.Unlock()
+ if _,ok:=s.state.Users[user];!ok{return ErrNotFound}
+ if s.state.PushPreviewsDisabled==nil{s.state.PushPreviewsDisabled=make(map[string]bool)}
+ old,exists:=s.state.PushPreviewsDisabled[user]
+ s.state.PushPreviewsDisabled[user]=!enabled
+ if err:=s.saveLocked();err!=nil{
+   if exists{s.state.PushPreviewsDisabled[user]=old}else{delete(s.state.PushPreviewsDisabled,user)}
+   return err
+ }
+ return nil
+}
+func (s *Server) getPushPreferences(w http.ResponseWriter,r *http.Request,user string){
+ writeJSON(w,200,map[string]bool{"preview":s.store.pushPreviewAllowed(user)})
+}
+func (s *Server) setPushPreferences(w http.ResponseWriter,r *http.Request,user string){
+ var v struct{Preview *bool `json:"preview"`}
+ if !readJSON(w,r,&v){return}
+ if v.Preview==nil{apiError(w,400,"缺少 preview 设置");return}
+ if err:=s.store.SetPushPreview(user,*v.Preview);err!=nil{apiError(w,500,"保存推送设置失败");return}
+ writeJSON(w,200,map[string]bool{"preview":*v.Preview})
+}
+func previewText(input string,max int)string{
+ characters:=[]rune(strings.TrimSpace(input))
+ if len(characters)<=max{return string(characters)}
+ return string(characters[:max])+"…"
+}
+func (s *Server) queuePush(room Room,msg ChatMessage) {
+ if s.push==nil{return}
+ recipients:=room.Members
+ if room.Type=="lobby"{
+   recipients=nil
+   for _,person:=range s.store.Users(""){
+     recipients=append(recipients,person.Username)
+   }
+ }
+ for _,username:=range recipients{
+   if username==msg.Sender{continue}
+   subs:=s.store.PushFor(username)
+   if len(subs)==0{continue}
+   title,body:="ZzzMessage","收到一条新消息"
+   if s.store.pushPreviewAllowed(username){
+     title=msg.Sender
+     if room.Type=="group"{title+=" · "+room.Name}
+     if room.Type=="lobby"{title+=" · 好友大厅"}
+     body=previewText(msg.Text,120)
+   }
+   s.push.mu.Lock()
+   now:=time.Now()
+   if now.Sub(s.push.last[username])<8*time.Second{
+     s.push.mu.Unlock()
+     continue
+   }
+   s.push.last[username]=now
+   s.push.mu.Unlock()
+   for _,sub:=range subs{
+     s.enqueuePush(pushDelivery{user:username,subscription:sub,
+       title:title,body:body,roomID:room.ID})
+   }
+ }
 }
 func (s *Server) pushWorker(svc *PushService) {
-  // The payload intentionally contains no username, group name or message text.
-  payload,_:=json.Marshal(map[string]string{"title":"ZzzMessage","body":"收到一条新消息","url":"/"})
   for delivery:=range svc.jobs {
+    title,body:=delivery.title,delivery.body
+    if title==""{title="ZzzMessage"}
+    if body==""{body="收到一条新消息"}
+    payload,_:=json.Marshal(map[string]string{"title":title,"body":body,"roomId":delivery.roomID,"url":"/message"})
     if !validPushSubscription(delivery.subscription) {
       svc.recordTestResult(delivery.user,delivery.testID,400,"InvalidSubscription")
       continue

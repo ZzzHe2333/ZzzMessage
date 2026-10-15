@@ -136,7 +136,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
             data,err:=json.Marshal(msg)
             if err==nil {
                 s.hub.broadcast(room,data)
-                s.queuePush(room,username)
+                s.queuePush(room,msg)
                 s.queueNativePush(room,username)
             }
         case "ack":
