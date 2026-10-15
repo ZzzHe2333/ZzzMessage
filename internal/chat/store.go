@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
+ webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 type User struct {
@@ -41,6 +42,7 @@ type Room struct {
 type diskState struct {
 	Users map[string]User `json:"users"`
 	Rooms map[string]Room `json:"rooms"`
+ Push map[string][]webpush.Subscription `json:"pushSubscriptions,omitempty"`
 }
 
 type Store struct {

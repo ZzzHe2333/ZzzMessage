@@ -8,6 +8,9 @@ services:
       INVITE_CODE: ${INVITE_CODE:?Please set INVITE_CODE in .env}
       SESSION_SECRET: ${SESSION_SECRET:?Please set SESSION_SECRET in .env}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Please set ALLOWED_ORIGINS in .env}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
     volumes:
       - zzzmessage_data:/data
     networks:
