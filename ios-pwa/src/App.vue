@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { keepMessage, keepMessages, loadMessages, loadAllMessages, clearRoom } from './localMessages'
 
 const SERVER_KEY = 'zzzmessage.server'
@@ -29,6 +29,14 @@ const status = ref('')
 const busy = ref(false)
 const tab = ref('chats')
 const groupName = ref('')
+const chatSearch = ref('')
+const menuOpen = ref(false)
+const infoOpen = ref(false)
+const emojiOpen = ref(false)
+const uploadBusy = ref(false)
+const fileInput = ref(null)
+const recentEmoji = ['😀','😁','😂','🥰','😍','😘','😎','😭','🙏','👍','❤️','🎉','🔥','🌷','☕','🤝','💡','✅','😴','🥳','🌈','💬','👌','👀']
+
 const groupMembers = ref([])
 const newGroup = ref(false)
 const showSettings = ref(false)
@@ -63,6 +71,7 @@ const onIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
 const installedPWA = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
 let pushRegistration = null
 const chatScroll = ref(null)
+let pushExistingSubscription = null
 let socket = null
 let retryTimer = null
 let pollingTimer = null
@@ -72,7 +81,76 @@ let reconnectDelay = 1500
 let liveSession = 0
 
 const activeRoom = computed(() => rooms.value.find(r => r.id === selectedId.value))
-const roomLabel = r => r.type === 'direct' ? (r.members.find(x => x !== me.value?.username) || '私聊') : r.name
+const roomLabel = r => {
+  if (r.type !== 'direct') return r.name
+  const username = r.members.find(x => x !== me.value?.username)
+  return users.value.find(u => u.username === username)?.displayName || username || '私聊'
+}
+const roomAvatar = r => (r?.type === 'direct' ? roomLabel(r).slice(0,1) : r?.type === 'group' ? '👥' : '💬')
+const filteredRooms = computed(() => rooms.value.filter(r =>
+  roomLabel(r).toLowerCase().includes(chatSearch.value.trim().toLowerCase())
+))
+const filteredPeople = computed(() => users.value.filter(u =>
+  (u.displayName + ' ' + u.username).toLowerCase().includes(chatSearch.value.trim().toLowerCase())
+))
+const activeSubtitle = computed(() => activeRoom.value?.type==='group'
+  ? activeRoom.value.members.length + ' 位成员'
+  : activeRoom.value?.type==='direct' ? '私人对话' : '所有服务器成员')
+const displayTitle = computed(() => activeRoom.value ? roomLabel(activeRoom.value) + ' · ZzzMessage' : 'ZzzMessage')
+watch([displayTitle, routePath], () => {
+  document.title = routePath.value === '/message' ? displayTitle.value : 'ZzzMessage · ' + routePath.value.slice(1)
+}, { immediate:true })
+function goMenu(target) {
+  menuOpen.value=false
+  if (target==='/friend') void refresh()
+  navigate(target)
+}
+function insertEmoji(emoji){
+  draft.value += emoji
+  emojiOpen.value=false
+}
+function fileSize(bytes){
+  return bytes>=1024*1024 ? (bytes/1024/1024).toFixed(1)+' MB' : Math.max(1,Math.ceil(bytes/1024))+' KB'
+}
+async function uploadAttachment(event){
+  const file=event.target.files?.[0]
+  event.target.value=''
+  if(!file||!me.value)return
+  if(file.size>10*1024*1024){showError(Error('单个文件最多10MB'));return}
+  if(!file.size){showError(Error('不能发送空文件'));return}
+  if(uploadBusy.value)return
+  uploadBusy.value=true
+  const roomID=selectedId.value
+  try{
+    const form=new FormData()
+    form.append('roomId',roomID)
+    form.append('file',file,file.name)
+    const response=await fetch(server.value+'/api/files/upload',{
+      method:'POST',headers:{Authorization:'Bearer '+token.value},body:form,cache:'no-store'
+    })
+    const data=await response.json().catch(()=>({}))
+    if(!response.ok)throw Error(data.error||'文件上传失败（HTTP '+response.status+'）')
+    await acceptMessage(data)
+  }catch(err){showError(err)}
+  finally{uploadBusy.value=false}
+}
+async function downloadAttachment(attachment){
+  if(!attachment?.id)return
+  try{
+    const res=await fetch(server.value+'/api/files/'+encodeURIComponent(attachment.id),{
+      headers:{Authorization:'Bearer '+token.value},cache:'no-store'
+    })
+    if(!res.ok)throw Error('下载失败：HTTP '+res.status)
+    const blob=await res.blob()
+    const href=URL.createObjectURL(blob)
+    const a=document.createElement('a')
+    a.href=href
+    a.download=attachment.name||'attachment'
+    document.body.appendChild(a);a.click();a.remove()
+    setTimeout(()=>URL.revokeObjectURL(href),60000)
+  }catch(err){showError(err)}
+}
+
 const serverName = computed(() => { try { return new URL(server.value).host } catch { return server.value } })
 const sortedMessages = computed(() => [...messages.value].sort((a,b) => a.createdAt.localeCompare(b.createdAt)))
 const selectedUsers = computed(() => users.value.filter(u => groupMembers.value.includes(u.username)))
@@ -238,6 +316,8 @@ async function refresh() {
 async function selectRoom(id) {
   const sequence = ++roomLoadSequence
   selectedId.value = id
+  infoOpen.value = false
+  emojiOpen.value = false
   navigate('/message')
   mobileChat.value = true
   messages.value = []
@@ -371,6 +451,7 @@ async function pollPendingMessages(){
   try {
     const reply=await request('/api/messages/pending')
     apiConnected.value=true
+    if(Array.isArray(reply.rooms)) rooms.value=reply.rooms
     if(Array.isArray(reply.messages)){
       for(const msg of reply.messages){await acceptMessage(msg)}
     }
@@ -543,8 +624,11 @@ async function createGroup() {
   try {
     const room = await request('/api/rooms', { method: 'POST', body: JSON.stringify({ name: groupName.value, members: groupMembers.value }) })
     newGroup.value = false; groupName.value = ''; groupMembers.value = []
-    await refresh(); if (!rooms.value.some(r => r.id === room.id)) rooms.value.push(room)
+    if (!rooms.value.some(r=>r.id===room.id)) rooms.value=[...rooms.value,room]
     await selectRoom(room.id)
+    await refresh()
+    // The HTTP pending endpoint also distributes the latest room list to
+    // all members if a reverse proxy blocks WebSocket upgrades.
   } catch (err) { showError(err) }
 }
 // Prefetch both VAPID config and worker before user gesture.
@@ -564,6 +648,7 @@ async function preparePush() {
   pushEnabled.value = false
   pushAvailable.value = false
   pushRegistration = null
+  pushExistingSubscription = null
   pushStatus.value = ''
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || !window.isSecureContext) {
     pushStatus.value = '浏览器不支持 Web Push，或页面未使用 HTTPS。'
@@ -586,6 +671,7 @@ async function preparePush() {
     ])
     pushAvailable.value = Boolean(pushRegistration?.pushManager)
     const subscription = await pushRegistration.pushManager.getSubscription()
+    pushExistingSubscription = subscription
     if (subscription && matchingPushKey(subscription) && Notification.permission === 'granted') {
       await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(pushSubscriptionPayload(subscription)) })
       pushEnabled.value = true
@@ -615,11 +701,16 @@ function enablePush() {
   pushStatus.value = '正在请求通知权限…'
   try {
     // No awaited operation before subscribe(): iOS requires a user gesture.
-    const pending = pushRegistration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: decodeVapid(pushPublicKey.value)
-    })
+    // Reuse the existing subscription for the same VAPID key. Calling
+    // subscribe() with an existing mismatched key fails in Edge/Chromium.
+    const pending = pushExistingSubscription && matchingPushKey(pushExistingSubscription)
+      ? Promise.resolve(pushExistingSubscription)
+      : pushRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: decodeVapid(pushPublicKey.value)
+        })
     pending.then(async subscription => {
+      pushExistingSubscription = subscription
       await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(pushSubscriptionPayload(subscription)) })
       pushEnabled.value = true
       pushStatus.value = '通知已开启，可发送测试通知。'
@@ -645,6 +736,7 @@ async function disablePush() {
       }
       await existing.unsubscribe()
     }
+    pushExistingSubscription = null
     pushEnabled.value = false
     if (!pushStatus.value.includes('旧服务器')) pushStatus.value = '本设备通知已关闭'
   } catch (err) { pushStatus.value = '关闭推送失败：' + err.message }
