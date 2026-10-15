@@ -134,12 +134,28 @@ async function request(path, options = {}) {
   return body
 }
 async function testServer() {
-  busy.value = true; status.value = ''
+  busy.value = true
+  status.value = ''
   try {
     const address = normalizeAddress(editedServer.value)
-    const response = await fetch(address + '/api/health', { cache: 'no-store', signal: AbortSignal.timeout(8000) })
-    const data = await response.json()
-    if (!response.ok || data.app !== 'ZzzMessage') throw Error('这个地址不是兼容的 ZzzMessage 后端')
+    // Some Safari versions throw an opaque DOMException on AbortSignal.timeout
+    // or when a proxy responds with HTML instead of JSON.
+    // Avoid the optional timeout API here and report the stage and HTTP code.
+    let response
+    try {
+      const healthPath = address === location.origin ? '/api/health' : address + '/api/health'
+      response = await fetch(healthPath, { cache: 'no-store' })
+    } catch (err) {
+      throw Error('无法连接服务器，请检查 HTTPS / DDNSTO 代理和证书：' + (err?.message || String(err)))
+    }
+    if (!response.ok) throw Error('服务器健康检查失败：HTTP ' + response.status)
+    let data
+    try {
+      data = await response.json()
+    } catch {
+      throw Error('服务器未返回有效的 JSON；请检查 DDNSTO 是否代理了 /api/health，而非返回登录页面或网关提示。')
+    }
+    if (data.app !== 'ZzzMessage') throw Error('该地址不是 ZzzMessage 后端')
     disconnect()
     server.value = address
     editedServer.value = address
@@ -148,8 +164,11 @@ async function testServer() {
     configured.value = true
     token.value = localStorage.getItem(savedTokenKey()) || ''
     await resume()
-  } catch (err) { showError(err) }
-  finally { busy.value = false }
+  } catch (err) {
+    showError(err)
+  } finally {
+    busy.value = false
+  }
 }
 async function authenticate() {
   busy.value = true; status.value = ''
@@ -471,7 +490,7 @@ async function preparePush() {
     pushAvailable.value = Boolean(pushRegistration?.pushManager)
     const subscription = await pushRegistration.pushManager.getSubscription()
     if (subscription && matchingPushKey(subscription) && Notification.permission === 'granted') {
-      await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(subscription.toJSON()) })
+      await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(pushSubscriptionPayload(subscription)) })
       pushEnabled.value = true
       pushStatus.value = '本设备已启用消息通知'
     } else if (subscription && !matchingPushKey(subscription)) {
@@ -480,6 +499,15 @@ async function preparePush() {
       pushStatus.value = '点击按钮允许系统通知。'
     }
   } catch (err) { pushStatus.value = err.message || '推送初始化失败' }
+}
+// PushSubscription.toJSON() also contains expirationTime; the server stores
+// only the delivery endpoint and cryptographic key material.
+function pushSubscriptionPayload(subscription) {
+  const data = subscription.toJSON()
+  return {
+    endpoint: data.endpoint,
+    keys: { p256dh: data.keys?.p256dh, auth: data.keys?.auth }
+  }
 }
 function enablePush() {
   if (!pushRegistration || !pushPublicKey.value || pushBusy.value) {
@@ -495,7 +523,7 @@ function enablePush() {
       applicationServerKey: decodeVapid(pushPublicKey.value)
     })
     pending.then(async subscription => {
-      await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(subscription.toJSON()) })
+      await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(pushSubscriptionPayload(subscription)) })
       pushEnabled.value = true
       pushStatus.value = '通知已开启，可发送测试通知。'
     }).catch(err => {
@@ -647,7 +675,7 @@ onBeforeUnmount(() => {
       <h1>连接你的私人服务器</h1>
       <p class="muted">使用自己部署的 Go 后端。服务器之间账号与消息互相独立。</p>
       <label class="field-label">后端地址</label>
-      <input v-model="editedServer" placeholder="https://chat.example.com" @keyup.enter="testServer" />
+      <input v-model="editedServer" type="url" inputmode="url" autocapitalize="off" autocomplete="url" spellcheck="false" placeholder="https://chat.example.com" @keyup.enter="testServer" />
       <p class="hint">需支持 /api/health。公网请使用 HTTPS；局域网私有 IP 可使用 HTTP（此时无法启用 Web Push）。</p>
       <button class="primary" :disabled="busy" @click="testServer">{{ busy ? '正在检查...' : '验证并固定服务器' }}</button>
       <p v-if="status" class="error" role="alert">{{ status }}</p>

@@ -58,3 +58,35 @@ func validTestPushSubscription(t *testing.T, endpoint string) webpush.Subscripti
     P256dh:base64.RawURLEncoding.EncodeToString(key),
   }}
 }
+
+func TestBrowserPushJSONWithExpirationTime(t *testing.T) {
+ s:=testServer(t)
+ alice:=reg(t,s,"alice")
+ // A valid private/public pair is required to configure the push server.
+ private,public,err:=webpush.GenerateVAPIDKeys()
+ if err!=nil{t.Fatal(err)}
+ if err:=s.ConfigurePush(public,private,"mailto:test@example.com");err!=nil{t.Fatal(err)}
+ sub:=validTestPushSubscription(t,"https://web.push.apple.com/device/123")
+ base,_:=json.Marshal(sub)
+ var body map[string]any
+ if err:=json.Unmarshal(base,&body);err!=nil{t.Fatal(err)}
+ for _,expiry:=range []any{nil,float64(1790000000000)}{
+   body["expirationTime"]=expiry
+   bytesBody,_:=json.Marshal(body)
+   request:=httptest.NewRequest("PUT","/api/push/subscription",bytes.NewReader(bytesBody))
+   request.Header.Set("Authorization","Bearer "+alice)
+   request.Header.Set("Content-Type","application/json")
+   response:=httptest.NewRecorder()
+   s.Handler().ServeHTTP(response,request)
+   if response.Code!=200{t.Fatalf("browser JSON expires=%v: %d %s",expiry,response.Code,response.Body.String())}
+ }
+ if len(s.store.PushFor("alice"))!=1{t.Fatal("subscription was duplicated")}
+ body["extraUnsafeField"]=true
+ bad,_:=json.Marshal(body)
+ req:=httptest.NewRequest("PUT","/api/push/subscription",bytes.NewReader(bad))
+ req.Header.Set("Authorization","Bearer "+alice)
+ req.Header.Set("Content-Type","application/json")
+ w:=httptest.NewRecorder()
+ s.Handler().ServeHTTP(w,req)
+ if w.Code!=400{t.Fatalf("unknown JSON field accepted: %d",w.Code)}
+}

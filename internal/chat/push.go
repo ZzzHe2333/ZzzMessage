@@ -108,8 +108,16 @@ func (s *Server) pushConfig(w http.ResponseWriter,_ *http.Request,_ string) {
 }
 func (s *Server) putPush(w http.ResponseWriter,r *http.Request,user string) {
   if s.push == nil { apiError(w,503,"服务器尚未配置 VAPID 推送"); return }
-  var sub webpush.Subscription
-  if !readJSON(w,r,&sub) { return }
+  // Browser PushSubscription.toJSON() includes expirationTime (usually null).
+  // Decode only the well-defined Push API fields; retain strict JSON parsing
+  // for unknown fields and validate the endpoint/keys before persistence.
+  var payload struct {
+    Endpoint string `json:"endpoint"`
+    Keys webpush.Keys `json:"keys"`
+    ExpirationTime *int64 `json:"expirationTime"`
+  }
+  if !readJSON(w,r,&payload) { return }
+  sub:=webpush.Subscription{Endpoint:payload.Endpoint,Keys:payload.Keys}
   if !validPushSubscription(sub) { apiError(w,400,"推送订阅无效或推送服务不受支持"); return }
   if err := s.store.SavePush(user,sub); err != nil {
     log.Printf("save push subscription failed: %v",err)
