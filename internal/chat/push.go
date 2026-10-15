@@ -5,6 +5,8 @@ import (
   "encoding/base64"
   "encoding/json"
   "errors"
+  "io"
+  "regexp"
   "log"
   "net/http"
   "net/url"
@@ -75,6 +77,19 @@ func (s *Store) PushFor(username string) []webpush.Subscription {
 type pushDelivery struct {
   user string
   subscription webpush.Subscription
+  testID string
+}
+
+// Progress is stored per authenticated user only and contains no endpoint,
+// keys or chat content. The provider's bounded error reason is safe to show.
+type PushTestResult struct {
+  ID string `json:"id"`
+  Queued int `json:"queued"`
+  Done int `json:"done"`
+  Delivered int `json:"delivered"`
+  Failed int `json:"failed"`
+  LastStatus int `json:"lastStatus,omitempty"`
+  Reason string `json:"reason,omitempty"`
 }
 type PushService struct {
   public string
@@ -84,6 +99,7 @@ type PushService struct {
   httpClient *http.Client
   mu sync.Mutex
   last map[string]time.Time
+  tests map[string]PushTestResult
 }
 func (s *Server) ConfigurePush(public, private, subject string) error {
   if public == "" && private == "" { return nil } // Optional feature.
@@ -97,7 +113,7 @@ func (s *Server) ConfigurePush(public, private, subject string) error {
   }
   svc := &PushService{public:public,private:private,subject:subject,jobs:make(chan pushDelivery,256),
     httpClient:&http.Client{Timeout:8*time.Second,CheckRedirect:func(_ *http.Request,_ []*http.Request) error {return http.ErrUseLastResponse}},
-    last:make(map[string]time.Time)}
+    last:make(map[string]time.Time),tests:make(map[string]PushTestResult)}
   s.push = svc
   for i:=0;i<4;i++ { go s.pushWorker(svc) }
   return nil
@@ -144,11 +160,61 @@ func (s *Server) testPush(w http.ResponseWriter,_ *http.Request,user string) {
   }
   s.push.last[key]=now
   s.push.mu.Unlock()
-  sent:=0
-  for _,sub:=range s.store.PushFor(user) {
-    if validPushSubscription(sub) && s.enqueuePush(pushDelivery{user:user,subscription:sub}) {sent++}
+
+  id,err:=randomID()
+  if err!=nil{apiError(w,500,"无法建立推送测试");return}
+  subs:=s.store.PushFor(user)
+  jobs:=make([]pushDelivery,0,len(subs))
+  for _,sub:=range subs{
+    if validPushSubscription(sub) {
+      jobs=append(jobs,pushDelivery{user:user,subscription:sub,testID:id})
+    }
   }
-  writeJSON(w,200,map[string]int{"queued":sent})
+  result:=PushTestResult{ID:id,Queued:len(jobs)}
+  s.push.mu.Lock()
+  s.push.tests[user]=result
+  s.push.mu.Unlock()
+  for _,job:=range jobs {
+    if !s.enqueuePush(job) {
+      s.push.recordTestResult(user,id,503,"QueueFull")
+    }
+  }
+  writeJSON(w,200,map[string]any{"queued":len(jobs),"testId":id})
+}
+
+func (s *Server) pushTestStatus(w http.ResponseWriter,_ *http.Request,user string){
+  if s.push==nil{apiError(w,503,"服务器未启用推送");return}
+  s.push.mu.Lock()
+  result,ok:=s.push.tests[user]
+  s.push.mu.Unlock()
+  if !ok{writeJSON(w,200,PushTestResult{});return}
+  writeJSON(w,200,result)
+}
+
+func (svc *PushService) recordTestResult(user,id string,status int,reason string) {
+  if id==""{return}
+  svc.mu.Lock()
+  defer svc.mu.Unlock()
+  current,exists:=svc.tests[user]
+  if !exists || current.ID!=id{return}
+  current.Done++
+  current.LastStatus=status
+  if status>=200&&status<300 {current.Delivered++} else {
+    current.Failed++
+    current.Reason=reason
+  }
+  svc.tests[user]=current
+}
+
+var pushReasonPattern=regexp.MustCompile(\`^[A-Za-z][A-Za-z0-9_-]{0,63}$\`)
+func pushProviderReason(body io.Reader)string{
+  bytes,err:=io.ReadAll(io.LimitReader(body,2048))
+  if err!=nil{return ""}
+  var payload struct{Reason string \`json:"reason"\`}
+  if json.Unmarshal(bytes,&payload)==nil && pushReasonPattern.MatchString(payload.Reason) {
+    return payload.Reason
+  }
+  return ""
 }
 func (s *Server) enqueuePush(j pushDelivery) bool {
   if s.push==nil{return false}
@@ -180,19 +246,32 @@ func (s *Server) pushWorker(svc *PushService) {
   // The payload intentionally contains no username, group name or message text.
   payload,_:=json.Marshal(map[string]string{"title":"ZzzMessage","body":"收到一条新消息","url":"/"})
   for delivery:=range svc.jobs {
-    if !validPushSubscription(delivery.subscription){continue}
+    if !validPushSubscription(delivery.subscription) {
+      svc.recordTestResult(delivery.user,delivery.testID,400,"InvalidSubscription")
+      continue
+    }
     ctx,cancel:=context.WithTimeout(context.Background(),8*time.Second)
     response,err:=webpush.SendNotificationWithContext(ctx,payload,&delivery.subscription,&webpush.Options{
       Subscriber:svc.subject,VAPIDPublicKey:svc.public,VAPIDPrivateKey:svc.private,TTL:120,
       HTTPClient:svc.httpClient,
     })
     cancel()
-    if err!=nil {log.Printf("web push failed for user %q: %T",delivery.user,err);continue}
+    if err!=nil{
+      log.Printf("web push request failed for user %q: %v",delivery.user,err)
+      svc.recordTestResult(delivery.user,delivery.testID,0,"NetworkOrSignatureError")
+      continue
+    }
+    reason:=""
+    if response.StatusCode<200||response.StatusCode>=300 {
+      reason=pushProviderReason(response.Body)
+    }
     _=response.Body.Close()
-    if response.StatusCode==http.StatusGone || response.StatusCode==http.StatusNotFound {
-      if err:=s.store.DeletePush(delivery.user,delivery.subscription.Endpoint);err!=nil {log.Printf("prune push failed: %v",err)}
-    } else if response.StatusCode<200 || response.StatusCode>=300 {
-      log.Printf("web push status %d for user %q",response.StatusCode,delivery.user)
+    svc.recordTestResult(delivery.user,delivery.testID,response.StatusCode,reason)
+    if response.StatusCode==http.StatusGone||response.StatusCode==http.StatusNotFound{
+      if err:=s.store.DeletePush(delivery.user,delivery.subscription.Endpoint);err!=nil{log.Printf("prune push failed: %v",err)}
+    } else if response.StatusCode<200||response.StatusCode>=300{
+      // Do not log the provider's subscription endpoint, token, or response body.
+      log.Printf("web push status %d reason=%q apns-id=%q for user %q",response.StatusCode,reason,response.Header.Get("apns-id"),delivery.user)
     }
   }
 }

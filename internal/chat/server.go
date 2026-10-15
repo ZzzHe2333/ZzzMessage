@@ -118,7 +118,8 @@ func (s *Server) Middleware(next http.Handler) http.Handler {
 		o := strings.TrimRight(r.Header.Get("Origin"), "/")
 		if o != "" {
 			if !s.allowedOrigin(o) {
-				http.Error(w, "Origin forbidden", http.StatusForbidden)
+				// Do not weaken the allowlist: tell the client which configuration is missing.
+                apiError(w, http.StatusForbidden, "访问来源未加入 ALLOWED_ORIGINS，检查域名、协议和端口；请在服务器 .env 添加当前网页的完整 Origin 后重启")
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Origin", o)
@@ -160,6 +161,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/push/subscription", s.auth(s.putPush))
 	mux.HandleFunc("DELETE /api/push/subscription", s.auth(s.deletePush))
 	mux.HandleFunc("POST /api/push/test", s.auth(s.testPush))
+	mux.HandleFunc("GET /api/push/test-status", s.auth(s.pushTestStatus))
 	return s.Middleware(mux)
 }
 
