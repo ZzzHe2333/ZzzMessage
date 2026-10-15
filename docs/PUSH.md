@@ -54,3 +54,29 @@ iOS 主屏幕 Web Push 经 Apple 的推送基础设施送达，但使用的是�
 ## 多设备历史同步说明
 
 同一账户多个客户端上线后，会通过 Go WebSocket 中继同步各客户端的本地 IndexedDB 记录，前提是至少一台旧设备仍保有记录且在线。服务器不会长期保存完整历史。推送服务仍只发送固定提醒，不包含礼物或聊天正文。
+
+
+## 推送被 Apple 拒绝：HTTP 403
+
+Apple Web Push 的 HTTP 403 是认证失败，不代表「已入队」就是发送成功。
+修复版服务端会记录类似：
+\`web push status 403 reason="BadJwtToken" apns-id="..." for user "..."\`
+并且前端发送测试推送后会轮询 /api/push/test-status 显示结果，不再把已入队当作已送达。
+- \`BadJwtToken\`：检查 VAPID_SUBJECT 是否为**真实有效的**邮箱或 HTTPS URL、服务器时间是否正确、VAPID 签名密钥是否与浏览器订阅的公钥匹配。
+- \`BadVapidPublicKey\` / \`BadAuthorizationHeader\`：检查 VAPID 公钥编码及 HTTP 认证头。
+- HTTP 404 / 410：旧订阅可能已失效，应在设备上重新开启通知。
+- HTTP 201：Apple 接受推送请求，但设备是否展示通知仍受 iOS 通知权限和网络影响。
+
+内网穿透使用 HTTPS 时，可将 VAPID_SUBJECT 配成你的**实际** HTTPS 站点（例如 \`https://jinlangofficeb.ddnsto.com\`），无需改公私钥。不要长期使用示例地址 \`mailto:admin@example.com\` 或 localhost 作为联系地址。仅修改 VAPID_SUBJECT 不要求重新订阅；如果**更换密钥**，需要清除旧订阅并重新在 iPhone PWA 上允许推送。
+
+## Edge 本地访问无法注册
+
+注册与登录 API 会校验请求的浏览器 Origin（协议 + 域名/IP + 端口）。
+假如浏览器分别访问 localhost、本机回环和 DDNSTO，必须覆盖相应来源：
+
+\`\`\`dotenv
+ALLOWED_ORIGINS=http://localhost:58463,http://127.0.0.1:58463,https://jinlangofficeb.ddnsto.com
+LAN_ORIGIN_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+\`\`\`
+
+如果用户通过其他域名或端口登录，需根据实际浏览器地址栏补充，并重启 Go 后端；不要使用 \`*\` 或禁用来源校验。若注册提示「邀请码错误」或「用户名已存在」，应分别处理邀请信息和账号冲突；它们不是网络故障。
