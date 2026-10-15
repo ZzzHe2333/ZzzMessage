@@ -27,6 +27,15 @@ const groupName = ref('')
 const groupMembers = ref([])
 const newGroup = ref(false)
 const showSettings = ref(false)
+const mobileChat = ref(false)
+const pushAvailable = ref(false)
+const pushEnabled = ref(false)
+const pushBusy = ref(false)
+const pushPublicKey = ref('')
+const pushStatus = ref('')
+const onIOS = /iPhone|iPad|iPod/.test(navigator.userAgent)
+const installedPWA = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true
+let pushRegistration = null
 const chatScroll = ref(null)
 let socket = null
 let retryTimer = null
@@ -100,7 +109,9 @@ async function initialize() {
   await refresh()
   if (!rooms.value.some(r => r.id === selectedId.value)) selectedId.value = 'lobby'
   await selectRoom(selectedId.value)
+  mobileChat.value = false
   connect()
+  void preparePush()
 }
 async function refresh() {
   if (!me.value) return
@@ -112,6 +123,7 @@ async function refresh() {
 async function selectRoom(id) {
   selectedId.value = id
   tab.value = 'chats'
+  mobileChat.value = true
   messages.value = []
   if (!me.value) return
   try { const selected = id; const loaded = await loadMessages(server.value, me.value.username, id); if (selectedId.value === selected) messages.value = loaded }
@@ -179,17 +191,124 @@ async function createGroup() {
     await selectRoom(room.id)
   } catch (err) { showError(err) }
 }
+// Prefetch both VAPID config and worker before user gesture.
+// iOS requires subscribe() to begin synchronously in a tap handler.
+function decodeVapid(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4)
+  return Uint8Array.from(atob(padded), c => c.charCodeAt(0))
+}
+function matchingPushKey(subscription) {
+  const existing = subscription?.options?.applicationServerKey
+  if (!existing || !pushPublicKey.value) return false
+  const expected = decodeVapid(pushPublicKey.value)
+  const current = new Uint8Array(existing)
+  return current.length === expected.length && current.every((v, i) => v === expected[i])
+}
+async function preparePush() {
+  pushEnabled.value = false
+  pushAvailable.value = false
+  pushRegistration = null
+  pushStatus.value = ''
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || !window.isSecureContext) {
+    pushStatus.value = '浏览器不支持 Web Push，或页面未使用 HTTPS。'
+    return
+  }
+  if (onIOS && !installedPWA) {
+    pushStatus.value = 'iPhone 请先通过 Safari「分享 → 添加到主屏幕」，并从桌面图标打开。'
+    return
+  }
+  try {
+    const config = await request('/api/push/config')
+    if (!config.enabled || !config.publicKey) {
+      pushStatus.value = '服务器未配置 VAPID 密钥，请管理员查看 README。'
+      return
+    }
+    pushPublicKey.value = config.publicKey
+    pushRegistration = await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((_, reject) => setTimeout(() => reject(Error('Service Worker 未就绪；请使用 HTTPS 生产版 PWA')), 10000))
+    ])
+    pushAvailable.value = Boolean(pushRegistration?.pushManager)
+    const subscription = await pushRegistration.pushManager.getSubscription()
+    if (subscription && matchingPushKey(subscription) && Notification.permission === 'granted') {
+      await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(subscription.toJSON()) })
+      pushEnabled.value = true
+      pushStatus.value = '本设备已启用消息通知'
+    } else if (subscription && !matchingPushKey(subscription)) {
+      pushStatus.value = '检测到其他后端的推送订阅，请先「重置本机推送」。'
+    } else {
+      pushStatus.value = '点击按钮允许系统通知。'
+    }
+  } catch (err) { pushStatus.value = err.message || '推送初始化失败' }
+}
+function enablePush() {
+  if (!pushRegistration || !pushPublicKey.value || pushBusy.value) {
+    pushStatus.value = '尚未准备好：请检查 HTTPS、安装方式和 VAPID。'
+    return
+  }
+  pushBusy.value = true
+  pushStatus.value = '正在请求通知权限…'
+  try {
+    // No awaited operation before subscribe(): iOS requires a user gesture.
+    const pending = pushRegistration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: decodeVapid(pushPublicKey.value)
+    })
+    pending.then(async subscription => {
+      await request('/api/push/subscription', { method: 'PUT', body: JSON.stringify(subscription.toJSON()) })
+      pushEnabled.value = true
+      pushStatus.value = '通知已开启，可发送测试通知。'
+    }).catch(err => {
+      pushStatus.value = '开启失败：' + (err.message || String(err)) + '。更换过服务器请先重置本机推送。'
+    }).finally(() => { pushBusy.value = false })
+  } catch (err) {
+    pushBusy.value = false
+    pushStatus.value = '开启失败：' + err.message
+  }
+}
+async function disablePush() {
+  if (!('serviceWorker' in navigator)) return
+  pushBusy.value = true
+  try {
+    const registration = pushRegistration || await navigator.serviceWorker.getRegistration()
+    const existing = await registration?.pushManager?.getSubscription()
+    if (existing) {
+      // Best-effort removal of server record before local unsubscribe.
+      if (token.value) {
+        try { await request('/api/push/subscription', { method: 'DELETE', body: JSON.stringify({ endpoint: existing.endpoint }) }) }
+        catch { pushStatus.value = '旧服务器无法访问，可能暂时保留失效订阅。' }
+      }
+      await existing.unsubscribe()
+    }
+    pushEnabled.value = false
+    if (!pushStatus.value.includes('旧服务器')) pushStatus.value = '本设备通知已关闭'
+  } catch (err) { pushStatus.value = '关闭推送失败：' + err.message }
+  finally { pushBusy.value = false }
+}
+async function sendTestPush() {
+  pushStatus.value = ''
+  try {
+    const reply = await request('/api/push/test', { method: 'POST' })
+    pushStatus.value = reply.queued ? '测试推送已入队，请检查系统通知、网络及专注模式。' : '当前没有可用的推送订阅。'
+  } catch (err) { pushStatus.value = err.message }
+}
 async function clearLocal() {
   if (!me.value || !confirm('仅清除本设备当前会话的聊天记录，确认继续？')) return
   try { await clearRoom(server.value, me.value.username, selectedId.value); messages.value = [] } catch (err) { showError(err) }
 }
-function logout() {
+async function logout() {
+  await disablePush()
   disconnect()
   localStorage.removeItem(savedTokenKey())
   token.value = ''; me.value = null; rooms.value = []; users.value = []; messages.value = []
   showSettings.value = false; status.value = ''
 }
-function changeServer() { logout(); configured.value = false; checkedServer.value = false; editedServer.value = server.value }
+async function changeServer() {
+  await logout()
+  configured.value = false
+  checkedServer.value = false
+  editedServer.value = server.value
+}
 function formatTime(v) { try { return new Date(v).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' }) } catch { return '' } }
 onMounted(async () => {
   token.value = localStorage.getItem(savedTokenKey()) || ''
@@ -229,7 +348,7 @@ onBeforeUnmount(disconnect)
       <button class="link subtle" @click="changeServer">更换服务器</button>
     </section>
 
-    <section v-else class="app card">
+    <section v-else class="app card" :class="{ 'mobile-chat': mobileChat }">
       <aside class="sidebar">
         <header class="sidebar-head">
           <div class="brand"><span class="small-icon">Z</span><div><strong>ZzzMessage</strong><small>{{ serverName }}</small></div></div>
@@ -244,6 +363,14 @@ onBeforeUnmount(disconnect)
           <p class="muted">账号：{{ me.displayName }} (@{{ me.username }})</p>
           <p class="muted">后端：{{ server }}</p>
           <p class="hint">聊天正文只保存在各客户端的 IndexedDB；目前未做端到端或本地静态加密。</p>
+          <h3>消息推送（Web / Android / iPhone）</h3>
+          <p class="hint">系统通知只显示「收到新消息」，不包含正文。消息离线期间不补发。</p>
+          <p v-if="onIOS && !installedPWA" class="hint">iPhone：Safari 访问 HTTPS 网站 → 分享 → 添加到主屏幕 → 从桌面图标启动 → 登录后开启通知。需要 iOS 16.4+。</p>
+          <p v-else class="hint">Android 和桌面浏览器：使用 HTTPS 站点或 PWA，允许网站通知。实际送达取决于系统和浏览器。</p>
+          <p class="hint" role="status">{{ pushStatus }}</p>
+          <button v-if="!pushEnabled" class="primary" :disabled="pushBusy || !pushAvailable" @click="enablePush">开启本设备通知</button>
+          <button v-else class="secondary" :disabled="pushBusy" @click="sendTestPush">发送测试通知</button>
+          <button class="secondary" :disabled="pushBusy" @click="disablePush">{{ pushEnabled ? '关闭本设备通知' : '重置本机推送' }}</button>
           <button class="secondary" @click="clearLocal">清空当前会话本地记录</button>
           <button class="secondary" @click="changeServer">切换服务器</button>
           <button class="danger" @click="logout">退出登录</button>
@@ -270,9 +397,9 @@ onBeforeUnmount(disconnect)
         <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : connection === 'connecting' ? '正在连接' : '连接中断，将自动重试' }}</footer>
       </aside>
       <div class="chat-pane">
-        <header class="chat-head"><div><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom?.type === 'direct' ? '一对一私聊' : '实时消息 · 不保存云端历史' }}</small></div><button class="icon-button" title="刷新会话" @click="refresh">⟳</button></header>
+        <header class="chat-head"><button class="mobile-back" type="button" aria-label="返回会话" @click="mobileChat = false">‹ 返回</button><div><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom?.type === 'direct' ? '一对一私聊' : '实时消息 · 不保存云端历史' }}</small></div><button class="icon-button" title="刷新会话" @click="refresh">⟳</button></header>
         <div ref="chatScroll" class="timeline">
-          <div class="info-banner">这里只显示本设备收到的消息。本设备离线期间的消息不会补发；这不是端到端加密聊天。</div>
+          <div class="info-banner">Web / Android / iPhone 共用 PWA。消息通知不包含正文，离线期间的聊天正文不会补发；当前不是端到端加密。</div>
           <p v-if="sortedMessages.length === 0" class="empty-chat">还没有本地聊天记录。发送第一条消息吧。</p>
           <div v-for="m in sortedMessages" :key="m.id" class="message" :class="{ mine: m.sender === me.username }"><div class="bubble"><small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small><p>{{ m.text }}</p></div></div>
         </div>
