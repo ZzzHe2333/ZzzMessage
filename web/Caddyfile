@@ -3,6 +3,13 @@
     handle /api/* {
         reverse_proxy server:58463
     }
+    # Public browser paths are all handled by one Vue SPA.
+    @pages path /login /setting /message /friend
+    handle @pages {
+        root * /srv
+        rewrite * /index.html
+        file_server
+    }
     handle {
         root * /srv
         try_files {path} /index.html

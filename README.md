@@ -16,21 +16,21 @@
 
 > **早期可测试版本（MVP），尚未进行外网生产安全审计。**
 >
-> **服务器不会持久化聊天正文，但不是端到端加密（E2EE）。** 服务器在转发时能看到明文；手机/浏览器 IndexedDB 中的本地聊天记录也尚未加密。离线时的消息不缓存、不补发。
+> **现在服务器会临时持久化未 ACK 的聊天正文（明文），并不是端到端加密（E2EE）。** 每账号最多500条，14天补发期；客户端完成本地存储并 ACK 后，删除该账号的待投递副本。
 
 ## 已实现
 
 - 邀请码注册，bcrypt 密码哈希，7 天 HMAC 签名登录令牌。
 - 可手动填写 HTTPS 后端地址，校验后自动记住，下次打开继续使用。
 - Go WebSocket 实时聊天：好友大厅、两人私聊、最多 30 人的邀请制小群。
-- 按用户/服务器/房间隔离本地 IndexedDB 消息记录；服务器**仅保存账号与群组元数据**。
-- 多设备可同时在线，但**历史消息不会同步**；每台设备只保留自己在线收到的消息。
+- 按用户/服务器/房间隔离本地 IndexedDB 消息记录；服务器还会持久保存**尚未 ACK 的聊天正文**。
+- 离线用户重连时自动补发待投递消息，浏览器持久保存到 IndexedDB；同账号在一台设备上 ACK 后，其他离线设备可能无法再补收。
 - 断开后自动重连；Web PWA 支持 iPhone/Android 添加到主屏幕。
 - 可选 Web Push 系统通知：iPhone 主屏幕、Android 与桌面 Web，按账号保存推送订阅，使用 VAPID 密钥验证，通知只发送通用提醒。
 - Origin 白名单、JSON 请求限制、邀请制注册、简单的认证请求频率限制。
 - Docker Compose 运行，提供测试接口和 Go 测试。
 
-未实现：离线消息、文件/图片/语音、原生 APNs 通知（PWA 已支持 Web Push）、消息端到端加密、客户端本地静态加密、登录会话吊销、管理员管理后台、审核/举报系统、机器人 API。**不要把当前 MVP 当成已满足公开运营或应用商店上架要求的产品。**
+未实现：无限期云端消息历史与完整多端同步、文件/图片/语音、原生 APNs 通知（PWA 已支持 Web Push）、消息端到端加密、客户端本地静态加密、登录会话吊销、管理员管理后台、审核/举报系统、机器人 API。**不要把当前 MVP 当成已满足公开运营或应用商店上架要求的产品。**
 
 ## 快速启动（Docker，Ubuntu / Windows Docker）
 
@@ -45,7 +45,7 @@ docker compose up -d --build
 
 本机访问 `http://localhost:58463`，填写同一地址或直接点「验证并固定服务器」。第一次使用选择邀请码注册。
 
-Docker 默认仅绑定 `127.0.0.1:58463`（可通过 `.env` 的 `APP_PORT` 修改宿主机端口；Go 容器内部仍使用 58463），**不会直接向整个公网开放**。其他设备必须通过你设置的 HTTPS 反向代理/私有组网访问，并将公网前端来源（如 `https://chat.example.com`）加入 `.env` 中的 `ALLOWED_ORIGINS`，修改后重建容器：`docker compose up -d --force-recreate`。
+Docker 默认仅绑定 `127.0.0.1:58463`（`.env` 中 `APP_PORT` 可改端口、`BIND_HOST` 可绑定特定局域网网卡；Go 容器内部仍使用 58463），**不会直接向整个公网开放**。其他设备必须通过你设置的 HTTPS 反向代理/私有组网访问，并将公网前端来源（如 `https://chat.example.com`）加入 `.env` 中的 `ALLOWED_ORIGINS`，修改后重建容器：`docker compose up -d --force-recreate`。
 
 公网 TLS 可以由你自己的 Caddy/Nginx/Tailscale Serve/Cloudflare Tunnel 等提供。**iPhone PWA 与浏览器跨域连接需要有效的 HTTPS 证书**；纯 IP HTTP 不适合远程 PWA。使用反向代理时，将站点请求转发到宿主机本地 `127.0.0.1:58463`；公开的只应是 HTTPS 站点，不要同时绕开 TLS 暴露后端 58463 端口。
 
@@ -126,3 +126,14 @@ cd web && npm run build
 ## Android 原生系统通知
 
 首批 Xiaomi 与 vivo 的设备注册及厂商发送代码已加入，SDK AAR、开发者凭证需要由部署者自行取得，尚未编译和真机验证。配置见 [android/README.md](android/README.md)。除非用户明确要求，仓库不自动执行 Android、Go 或 Vue 构建。
+
+## 新版 main：离线补发与页面路由
+
+- `/` 自动跳转 `/login`；登录后 `/message`，联系人 `/friend`，设置 `/setting`。
+- Go 单进程与 Docker Caddy 都支持四个路径的直接访问和刷新，API 与 WebSocket 依旧走 `/api/*`。
+- 私有网段 Origin 通过 `LAN_ORIGIN_CIDRS` 放行；DDNSTO 公网 HTTPS 域名仍通过 `ALLOWED_ORIGINS` 精确指定。
+- 服务端明文待投递消息至多每账号500条、14天补发期，客户端 IndexedDB 保留本地已收到的聊天正文。
+- Windows 新版 BAT 支持 `start-lan.bat 43555`，Docker 支持 `APP_PORT=43555`。
+- 查看 [离线补发及路由部署指南](docs/OFFLINE_AND_ROUTES.md)。
+
+**已发布的 v0.2.0-beta.1 是旧版，新代码尚未编译、测试或重新发行。**

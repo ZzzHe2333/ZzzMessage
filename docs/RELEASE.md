@@ -34,7 +34,7 @@ ZzzMessage-iPhone-PWA.zip 是独立 ios-pwa/ 编译的静态网页。将 ZIP 内
 
 原生 Go 可以直接读取当前工作目录的 .env 文件；进程环境变量优先。.env 不包含在发行包中，只有 .env.example，所有密钥需管理员自己配置。
 
-Go 的 WEB_DIR 环境变量用于指定已编译的 Vue dist 目录。自带 start.ps1/start.sh 自动指定为解压包下的 web 文件夹。数据默认保存在 ./data/state.json 中，只保存账号、群组、推送设备/订阅元数据，不保存聊天正文。
+Go 的 WEB_DIR 环境变量用于指定已编译的 Vue dist 目录。自带 start.ps1/start.sh 自动指定为解压包下的 web 文件夹。数据默认保存在 ./data/state.json 中，包含账号、群组、推送订阅，以及每账号最多500条未 ACK 的**明文离线聊天正文**（14天补发窗口）。
 
 Android 厂商推送需要开发者资质及官方 SDK，Android APK 和鸿蒙客户端不包含本次后端与 PWA 发行包。
 
@@ -57,3 +57,7 @@ Android 厂商推送需要开发者资质及官方 SDK，Android APK 和鸿蒙�
 
 - 然后其他设备访问 `http://你的电脑局域网IP:58463/api/health`，若成功再访问 `http://你的电脑局域网IP:58463`。
 - 局域网 HTTP 可用于短期聊天连通性测试，**不支持 iPhone PWA 的安全上下文/系统推送**，正式对外使用应配置可信 HTTPS。
+
+## main 新增特性（尚未构建/发行）
+
+新增 `/login`、`/message`、`/friend`、`/setting` SPA 路由和离线补发；Windows 可使用 `start-lan.bat 43555` 自选端口，Docker 可使用 `APP_PORT=43555` 和 `BIND_HOST=指定局域网IP`。详见 [OFFLINE_AND_ROUTES.md](OFFLINE_AND_ROUTES.md)。v0.2.0-beta.1 发行包仍为旧版。

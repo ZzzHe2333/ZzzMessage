@@ -10,3 +10,5 @@
 - 若部署在独立域名，需将 iPhone PWA 的 origin 加入服务端 ALLOWED_ORIGINS。
 
 手动开发：在 ios-pwa/ 执行 npm install、npm run dev；手动部署前执行 npm run build。按照项目约定，代码提交不会自动构建。
+
+新版本使用 `/login`、`/message`、`/friend`、`/setting` 四路由；离线消息重新连接后补发，落入本机 IndexedDB 后 ACK。公网使用仍必须 HTTPS。
