@@ -165,3 +165,5 @@ Windows Edge 推送订阅现允许经安全 HTTPS 的 Microsoft WNS `*.notify.wi
 群聊创建成功会自动进入群，群成员在 WebSocket 无法正常升级时也会通过 HTTPS 消息轮询获得最新群列表，成员文字和文件消息都进入离线队列。创建群这一动作本身不发送系统通知。
 
 详见 [TG 界面、附件与跨浏览器推送说明](docs/TG_UI_FILES.md)。**main 代码不同于已发布的 v0.3.0-beta.1；在打包/部署新的测试版前，原有 EXE 不会自动获得这些功能。**
+
+本地消息搜索、未读/置顶、引用回复、文字转发、Emoji 回应和服务器同步的会话通知静音已接入 main。详见 [Telegram 风格功能对照与限制](docs/TG_UI_FILES.md)。

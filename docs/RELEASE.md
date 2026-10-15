@@ -77,3 +77,5 @@ main 源码增加 `POST /api/external/send`，需要独立 `EXTERNAL_SEND_KEY`�
 Windows/Linux/Web/iPhone PWA 源码增加搜索、会话资料、Emoji 和群成员同步；文件上传接口为 `POST /api/files/upload`，按 multipart/form-data 提交 `roomId` 与 `file`，下载使用 `GET /api/files/{id}` 并在请求头携带会话用户的 Bearer Token。默认 10 MiB/文件，数据在 `DATA_DIR/uploads` 中持久保存，备份时不能只复制 state.json。群创建后成员列表通过 /api/messages/pending 中的 rooms 同步。
 
 Windows Edge Web Push WNS 地址 `*.notify.windows.com` 已列入允许域名；更换过服务端或 VAPID 密钥的设备需要先通过应用按钮取消旧订阅，再开启新订阅。详情见 [TG_UI_FILES.md](TG_UI_FILES.md)。
+
+开发版新增会话消息摘要、未读/置顶、本地搜索与草稿、持久引用回复、跨设备 Emoji 回应以及服务器持久化的会话静音（/api/rooms/mutes）。图片/音视频预览需从登录客户端授权取回附件，不暴露静态文件路径。新的 Web 与 iPhone PWA 已在 npm test 中加入状态逻辑回归测试，部署前需运行完整构建和设备实测。详情见 TG_UI_FILES.md。
