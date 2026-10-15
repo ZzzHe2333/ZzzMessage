@@ -23,7 +23,12 @@
 
 也可 Windows PowerShell 在本机生成随机 Key（从安全随机字节转为十六进制）：
 
-    $key = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLower()
+    $bytes = New-Object byte[] 32
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($bytes)
+    $rng.Dispose()
+    $key = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+    $key
 
 3. 服务器 .env 添加：
 
