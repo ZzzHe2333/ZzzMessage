@@ -43,6 +43,8 @@ type diskState struct {
 	Users map[string]User `json:"users"`
 	Rooms map[string]Room `json:"rooms"`
 	Pending map[string][]ChatMessage `json:"pendingMessages,omitempty"`
+	Wallets map[string]Wallet `json:"wallets,omitempty"`
+	GiftLedger map[string]GiftPurchase `json:"giftLedger,omitempty"`
 	NativeDevices map[string][]NativeDevice `json:"nativeDevices,omitempty"`
  Push map[string][]webpush.Subscription `json:"pushSubscriptions,omitempty"`
 }
