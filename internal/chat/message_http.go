@@ -81,3 +81,32 @@ func (s *Server) httpAck(w http.ResponseWriter,r *http.Request,user string){
     }
     writeJSON(w,200,map[string]bool{"ok":true})
 }
+
+
+// Reactions are durable append-only toggles. A sender tapping an existing
+// reaction again sends a second event; clients use parity per user/emoji/target.
+// The target's actual content stays client-local, not in a cloud chat history.
+func (s *Server) httpReact(w http.ResponseWriter,r *http.Request,user string){
+    var input struct {
+        RoomID string `json:"roomId"`
+        MessageID string `json:"messageId"`
+        Emoji string `json:"emoji"`
+    }
+    if !readJSON(w,r,&input){return}
+    allowed:=map[string]bool{"👍":true,"❤️":true,"😂":true,"😮":true,"😢":true,"🎉":true}
+    if !validDeviceID(input.MessageID)||!allowed[input.Emoji]{
+        apiError(w,400,"无效的回应消息或表情")
+        return
+    }
+    if s.limitSend(user){apiError(w,429,"操作过于频繁");return}
+    room,message,err:=s.store.QueueReactionMessage(input.RoomID,user,input.MessageID,input.Emoji)
+    if err!=nil{
+        if err==ErrInvalid||err==ErrNotFound{apiError(w,403,"无权对该会话回应");return}
+        log.Printf("reaction persist failed: %v",err)
+        apiError(w,500,"保存回应失败")
+        return
+    }
+    if data,err:=json.Marshal(message);err==nil{s.hub.broadcast(room,data)}
+    // Emoji reactions intentionally do not generate additional Web Push.
+    writeJSON(w,201,message)
+}

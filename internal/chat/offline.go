@@ -20,22 +20,25 @@ type ChatMessage struct {
   ReplyTo string `json:"replyTo,omitempty"`
 }
 func (s *Store) QueueMessage(roomID,sender,text string)(Room,ChatMessage,error){
- return s.queueMessage(roomID,sender,text,nil,"")
+ return s.queueMessage(roomID,sender,text,nil,"","message")
 }
 func (s *Store) QueueReplyMessage(roomID,sender,text,replyTo string)(Room,ChatMessage,error){
- return s.queueMessage(roomID,sender,text,nil,replyTo)
+ return s.queueMessage(roomID,sender,text,nil,replyTo,"message")
 }
 func (s *Store) QueueAttachmentMessage(roomID,sender,text string,attachment *Attachment)(Room,ChatMessage,error){
- return s.queueMessage(roomID,sender,text,attachment,"")
+ return s.queueMessage(roomID,sender,text,attachment,"","message")
 }
-func (s *Store) queueMessage(roomID,sender,text string,attachment *Attachment,replyTo string)(Room,ChatMessage,error){
+func (s *Store) QueueReactionMessage(roomID,sender,targetID,emoji string)(Room,ChatMessage,error){
+ return s.queueMessage(roomID,sender,emoji,nil,targetID,"reaction")
+}
+func (s *Store) queueMessage(roomID,sender,text string,attachment *Attachment,replyTo,messageType string)(Room,ChatMessage,error){
  s.mu.Lock();defer s.mu.Unlock()
  room,ok:=s.state.Rooms[roomID]
  if !ok||!member(room,sender){return Room{},ChatMessage{},ErrInvalid}
  if _,ok:=s.state.Users[sender];!ok{return Room{},ChatMessage{},ErrNotFound}
  id,err:=randomID();if err!=nil{return Room{},ChatMessage{},err}
  now:=time.Now().UTC()
- msg:=ChatMessage{Type:"message",ID:id,RoomID:roomID,Sender:sender,Text:text,CreatedAt:now.Format(time.RFC3339Nano),Attachment:attachment,ReplyTo:replyTo}
+ msg:=ChatMessage{Type:messageType,ID:id,RoomID:roomID,Sender:sender,Text:text,CreatedAt:now.Format(time.RFC3339Nano),Attachment:attachment,ReplyTo:replyTo}
  recipients:=room.Members
  if room.Type=="lobby"{
   recipients=make([]string,0,len(s.state.Users))
