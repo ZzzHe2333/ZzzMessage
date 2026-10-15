@@ -14,6 +14,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ type Config struct {
 	InviteCode     string
 	SessionSecret  string
 	AllowedOrigins []string
+	LANOriginCIDRs []string
 }
 
 type Server struct {
@@ -32,6 +34,7 @@ type Server struct {
 	invite   string
 	secret   []byte
 	origins  map[string]bool
+	lanOriginCIDRs []netip.Prefix
 	hub      *Hub
 	attempts sync.Mutex
 	recent   map[string][]time.Time
@@ -55,7 +58,30 @@ func NewServer(c Config) (*Server, error) {
 		}
 		origins[v] = true
 	}
-	s := &Server{store: c.Store, invite: c.InviteCode, secret: []byte(c.SessionSecret), origins: origins, recent: map[string][]time.Time{}}
+    cidrs:=make([]netip.Prefix,0,len(c.LANOriginCIDRs))
+    privateBases:=[]netip.Prefix{
+        netip.MustParsePrefix("10.0.0.0/8"),
+        netip.MustParsePrefix("172.16.0.0/12"),
+        netip.MustParsePrefix("192.168.0.0/16"),
+        netip.MustParsePrefix("fc00::/7"),
+    }
+    for _,entry:=range c.LANOriginCIDRs{
+        entry=strings.TrimSpace(entry)
+        if entry==""{continue}
+        prefix,err:=netip.ParsePrefix(entry)
+        if err!=nil{return nil,fmt.Errorf("invalid LAN CIDR: %q",entry)}
+        prefix=prefix.Masked()
+        safe:=false
+        for _,base:=range privateBases {
+            if prefix.Addr().Is4()==base.Addr().Is4()&&prefix.Bits()>=base.Bits()&&base.Contains(prefix.Addr()){
+                safe=true
+                break
+            }
+        }
+        if !safe{return nil,fmt.Errorf("LAN CIDR outside private addresses: %q",entry)}
+        cidrs=append(cidrs,prefix)
+    }
+	s := &Server{store: c.Store, invite: c.InviteCode, secret: []byte(c.SessionSecret), origins: origins, lanOriginCIDRs:cidrs, recent: map[string][]time.Time{}}
 	s.hub = NewHub()
 	return s, nil
 }
@@ -69,8 +95,18 @@ func randomID() (string, error) {
 }
 
 func (s *Server) originAllowed(r *http.Request) bool {
-	o := strings.TrimRight(r.Header.Get("Origin"), "/")
-	return o == "" || s.origins[o]
+    return s.allowedOrigin(strings.TrimRight(r.Header.Get("Origin"),"/"))
+}
+func (s *Server) allowedOrigin(origin string) bool {
+    if origin=="" || s.origins[origin] {return true}
+    parsed,err:=url.Parse(origin)
+    if err!=nil || (parsed.Scheme!="http" && parsed.Scheme!="https") ||
+        parsed.User!=nil || parsed.RawQuery!="" || parsed.Fragment!="" ||
+        parsed.Path!="" {return false}
+    ip,err:=netip.ParseAddr(parsed.Hostname())
+    if err!=nil || !ip.IsPrivate(){return false}
+    for _,cidr:=range s.lanOriginCIDRs { if cidr.Contains(ip){return true} }
+    return false
 }
 
 func (s *Server) Middleware(next http.Handler) http.Handler {
@@ -79,7 +115,7 @@ func (s *Server) Middleware(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		o := strings.TrimRight(r.Header.Get("Origin"), "/")
 		if o != "" {
-			if !s.origins[o] {
+			if !s.allowedOrigin(o) {
 				http.Error(w, "Origin forbidden", http.StatusForbidden)
 				return
 			}
@@ -99,7 +135,7 @@ func (s *Server) Middleware(next http.Handler) http.Handler {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"app": "ZzzMessage", "version": "0.1.0", "messageStorage": "none"})
+		writeJSON(w, 200, map[string]any{"app": "ZzzMessage", "version": "0.1.0", "messageStorage": "pending-until-ack", "maxPendingPerUser": maxPendingPerAccount, "pendingTTLDays": 14})
 	})
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("POST /api/auth/login", s.login)

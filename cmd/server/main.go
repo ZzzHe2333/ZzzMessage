@@ -29,7 +29,7 @@ func main() {
 		log.Fatal(err)
 	}
 	origins := strings.Split(env("ALLOWED_ORIGINS", "http://localhost:58464,http://localhost:58463,http://127.0.0.1:58464,http://127.0.0.1:58463"), ",")
-	app, err := chat.NewServer(chat.Config{Store: store, InviteCode: os.Getenv("INVITE_CODE"), SessionSecret: os.Getenv("SESSION_SECRET"), AllowedOrigins: origins})
+	app, err := chat.NewServer(chat.Config{Store: store, InviteCode: os.Getenv("INVITE_CODE"), SessionSecret: os.Getenv("SESSION_SECRET"), AllowedOrigins: origins, LANOriginCIDRs: strings.Split(env("LAN_ORIGIN_CIDRS","10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"),",")})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func main() {
 		log.Printf("ZzzMessage static frontend: %s", webDir)
 	}
 	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
-	log.Printf("ZzzMessage API listening on %s; server stores accounts and rooms, not chat messages", addr)
+	log.Printf("ZzzMessage API listening on %s; server persists pending messages until ACK (14 days / 500 per account)", addr)
 	log.Fatal(server.ListenAndServe())
 }
 
