@@ -1,7 +1,7 @@
 :80 {
     encode gzip
     handle /api/* {
-        reverse_proxy server:8080
+        reverse_proxy server:58463
     }
     handle {
         root * /srv

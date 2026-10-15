@@ -23,5 +23,5 @@ export default defineConfig({
       navigateFallbackDenylist: [/^\/api\//]
     }
   })],
-  server: { port: 5173 }
+  server: { port: 58464, strictPort: true }
 })

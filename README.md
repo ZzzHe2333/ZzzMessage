@@ -30,11 +30,11 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-本机访问 `http://localhost:8080`，填写同一地址或直接点「验证并固定服务器」。第一次使用选择邀请码注册。
+本机访问 `http://localhost:58463`，填写同一地址或直接点「验证并固定服务器」。第一次使用选择邀请码注册。
 
-Docker 默认仅绑定 `127.0.0.1:8080`，**不会直接向整个公网开放**。其他设备必须通过你设置的 HTTPS 反向代理/私有组网访问，并将公网前端来源（如 `https://chat.example.com`）加入 `.env` 中的 `ALLOWED_ORIGINS`，修改后重建容器：`docker compose up -d --force-recreate`。
+Docker 默认仅绑定 `127.0.0.1:58463`（可通过 `.env` 的 `APP_PORT` 修改宿主机端口；Go 容器内部仍使用 58463），**不会直接向整个公网开放**。其他设备必须通过你设置的 HTTPS 反向代理/私有组网访问，并将公网前端来源（如 `https://chat.example.com`）加入 `.env` 中的 `ALLOWED_ORIGINS`，修改后重建容器：`docker compose up -d --force-recreate`。
 
-公网 TLS 可以由你自己的 Caddy/Nginx/Tailscale Serve/Cloudflare Tunnel 等提供。**iPhone PWA 与浏览器跨域连接需要有效的 HTTPS 证书**；纯 IP HTTP 不适合远程 PWA。使用反向代理时，将站点请求转发到宿主机本地 `127.0.0.1:8080`；公开的只应是 HTTPS 站点，不要同时绕开 TLS 暴露后端 8080 端口。
+公网 TLS 可以由你自己的 Caddy/Nginx/Tailscale Serve/Cloudflare Tunnel 等提供。**iPhone PWA 与浏览器跨域连接需要有效的 HTTPS 证书**；纯 IP HTTP 不适合远程 PWA。使用反向代理时，将站点请求转发到宿主机本地 `127.0.0.1:58463`；公开的只应是 HTTPS 站点，不要同时绕开 TLS 暴露后端 58463 端口。
 
 ## 本地开发
 
@@ -42,7 +42,7 @@ Docker 默认仅绑定 `127.0.0.1:8080`，**不会直接向整个公网开放**�
 # 终端1（在项目根目录，先设置随机强密钥）
 export INVITE_CODE="replace_with_your_secret_invite"
 export SESSION_SECRET="replace_with_at_least_32_random_characters"
-export ALLOWED_ORIGINS="http://localhost:5173,http://localhost:8080"
+export ALLOWED_ORIGINS="http://localhost:58464,http://localhost:58463"
 go run ./cmd/server
 
 # 终端2
@@ -51,7 +51,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:5173`，输入后端 `http://localhost:8080`。
+打开 `http://localhost:58464`，输入后端 `http://localhost:58463`。
 
 ## 后端 API
 
@@ -98,3 +98,10 @@ cd web && npm run build
 ```
 
 项目开源并不等于已取得在中国大陆公众提供即时通讯服务所需的备案/经营资质。本项目首先定位为少量熟人自托管测试用途。
+
+## 端口与构建约定
+
+- **默认宿主机端口：58463/TCP**（回环地址 127.0.0.1；可在 `.env` 设置 `APP_PORT`），Go 容器端口：58463，Caddy 容器内部端口：80（仅 Docker 内部使用），Vue 开发服务器：58464（不用于生产）。
+- 端口采用高位私有/动态范围，降低与常见开源项目的默认端口冲突概率；不能保证当前宿主机绝对未占用。启动前执行 `ss -ltn '( sport = :58463 )'` 检查本机 TCP 监听，或者用 `APP_PORT` 改端口。
+- 已有部署请检查旧 `.env` 中 `ALLOWED_ORIGINS`，把本地默认 8080/5173 更正为新的 58463/58464；如果对外使用独立 HTTPS 域名，域名来源照旧保留。
+- **GitHub Actions 仅支持手动 `workflow_dispatch`，push/PR 不会触发 Go 或 Vue 构建**。此仓库不会仅因代码提交而自动构建镜像或产物。README 中的构建/启动命令仅供部署人员主动执行。
