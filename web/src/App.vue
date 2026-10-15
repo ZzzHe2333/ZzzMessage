@@ -28,6 +28,12 @@ const groupMembers = ref([])
 const newGroup = ref(false)
 const showSettings = ref(false)
 const mobileChat = ref(false)
+const isNativeAndroid = Boolean(window.NativePushBridge)
+const nativeManufacturer = isNativeAndroid ? window.NativePushBridge.manufacturer() : ''
+const nativeSupported = ['xiaomi','redmi','vivo','iqoo'].includes(nativeManufacturer)
+const nativePushStatus = ref('')
+const nativePushBound = ref(false)
+const nativePushBusy = ref(false)
 const pushAvailable = ref(false)
 const pushEnabled = ref(false)
 const pushBusy = ref(false)
@@ -111,7 +117,11 @@ async function initialize() {
   await selectRoom(selectedId.value)
   mobileChat.value = false
   connect()
-  void preparePush()
+  if (isNativeAndroid) {
+    void restoreNativeRegistration()
+  } else {
+    void preparePush()
+  }
 }
 async function refresh() {
   if (!me.value) return
@@ -292,12 +302,75 @@ async function sendTestPush() {
     pushStatus.value = reply.queued ? '测试推送已入队，请检查系统通知、网络及专注模式。' : '当前没有可用的推送订阅。'
   } catch (err) { pushStatus.value = err.message }
 }
+async function registerNativeDevice(device) {
+  if (!me.value || !device?.provider || !device?.token) return
+  nativePushBusy.value = true
+  try {
+    await request('/api/native-push/device', {
+      method: 'PUT',
+      body: JSON.stringify({ provider: device.provider, token: device.token })
+    })
+    nativePushBound.value = true
+    nativePushStatus.value = '已绑定厂商推送设备：' + device.provider
+  } catch (err) { nativePushStatus.value = '绑定失败：' + err.message }
+  finally { nativePushBusy.value = false }
+}
+function onNativePushEvent(event) { void registerNativeDevice(event.detail) }
+function onNativePushError(event) { nativePushStatus.value = String(event.detail || '厂商初始化失败') }
+async function restoreNativeRegistration() {
+  if (!isNativeAndroid || !me.value) return
+  try {
+    const data = JSON.parse(window.NativePushBridge.registration() || '{}')
+    if (data.provider && data.token) await registerNativeDevice(data)
+    else nativePushStatus.value = '首次使用请点击「启用小米 / vivo 系统通知」。'
+  } catch (err) { nativePushStatus.value = err.message || '读取设备推送状态失败' }
+}
+async function enableNativePush() {
+  if (!nativeSupported || nativePushBusy.value) return
+  nativePushBusy.value = true
+  try {
+    const available = await request('/api/native-push/config')
+    const vendor = ['xiaomi', 'redmi'].includes(nativeManufacturer) ? 'xiaomi' : 'vivo'
+    if (!available[vendor]) {
+      nativePushStatus.value = '管理员尚未在 Go 服务端配置该厂商的推送密钥'
+      return
+    }
+    nativePushStatus.value = '正在初始化系统推送并请求通知授权…'
+    // Registration callback delivers token through zzz:native-push event.
+    window.NativePushBridge.enable()
+  } catch (err) { nativePushStatus.value = err.message }
+  finally { nativePushBusy.value = false }
+}
+async function disableNativePush() {
+  if (!isNativeAndroid) return
+  nativePushBusy.value = true
+  try {
+    const device = JSON.parse(window.NativePushBridge.registration() || '{}')
+    if (device.provider && device.token && token.value) {
+      await request('/api/native-push/device', {
+        method: 'DELETE', body: JSON.stringify({ provider: device.provider, token: device.token })
+      })
+    }
+    window.NativePushBridge.disable()
+    nativePushBound.value = false
+    nativePushStatus.value = '本机已取消厂商系统通知'
+  } catch (err) { nativePushStatus.value = '取消通知失败：' + err.message }
+  finally { nativePushBusy.value = false }
+}
+async function testNativePush() {
+  nativePushStatus.value = ''
+  try {
+    const res = await request('/api/native-push/test', { method: 'POST' })
+    nativePushStatus.value = res.queued ? '已请求厂商发送测试通知（实际送达需真机确认）' : '尚无绑定设备'
+  } catch (err) { nativePushStatus.value = err.message }
+}
 async function clearLocal() {
   if (!me.value || !confirm('仅清除本设备当前会话的聊天记录，确认继续？')) return
   try { await clearRoom(server.value, me.value.username, selectedId.value); messages.value = [] } catch (err) { showError(err) }
 }
 async function logout() {
-  await disablePush()
+  if (isNativeAndroid) await disableNativePush()
+  else await disablePush()
   disconnect()
   localStorage.removeItem(savedTokenKey())
   token.value = ''; me.value = null; rooms.value = []; users.value = []; messages.value = []
@@ -311,10 +384,16 @@ async function changeServer() {
 }
 function formatTime(v) { try { return new Date(v).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' }) } catch { return '' } }
 onMounted(async () => {
+  window.addEventListener('zzz:native-push', onNativePushEvent)
+  window.addEventListener('zzz:native-push-error', onNativePushError)
   token.value = localStorage.getItem(savedTokenKey()) || ''
   try { const health = await request('/api/health'); if (health.app === 'ZzzMessage') { checkedServer.value = true; configured.value = true; await resume() } } catch { configured.value = false }
 })
-onBeforeUnmount(disconnect)
+onBeforeUnmount(() => {
+  window.removeEventListener('zzz:native-push', onNativePushEvent)
+  window.removeEventListener('zzz:native-push-error', onNativePushError)
+  disconnect()
+})
 </script>
 
 <template>
@@ -363,7 +442,17 @@ onBeforeUnmount(disconnect)
           <p class="muted">账号：{{ me.displayName }} (@{{ me.username }})</p>
           <p class="muted">后端：{{ server }}</p>
           <p class="hint">聊天正文只保存在各客户端的 IndexedDB；目前未做端到端或本地静态加密。</p>
-          <h3>消息推送（Web / Android / iPhone）</h3>
+          <h3>{{ isNativeAndroid ? 'Android 原生系统推送' : 'Web / iPhone PWA 系统通知' }}</h3>
+          <template v-if="isNativeAndroid">
+            <p class="hint">厂商识别：{{ nativeManufacturer }}。首批支持 Xiaomi/Redmi、vivo/iQOO；仅在你主动同意后初始化 SDK。</p>
+            <p class="hint">推送只显示通用「收到新消息」，不包含聊天正文。</p>
+            <p class="hint" role="status">{{ nativePushStatus }}</p>
+            <button v-if="nativeSupported" class="primary" :disabled="nativePushBusy" @click="enableNativePush">启用小米 / vivo 系统通知</button>
+            <button v-if="nativePushBound" class="secondary" :disabled="nativePushBusy" @click="testNativePush">发送厂商测试通知</button>
+            <button v-if="nativeSupported" class="secondary" :disabled="nativePushBusy" @click="disableNativePush">关闭厂商推送</button>
+            <p v-if="!nativeSupported" class="hint">此 Android 设备暂不在首批厂商推送支持范围。</p>
+          </template>
+          <template v-else>
           <p class="hint">系统通知只显示「收到新消息」，不包含正文。消息离线期间不补发。</p>
           <p v-if="onIOS && !installedPWA" class="hint">iPhone：Safari 访问 HTTPS 网站 → 分享 → 添加到主屏幕 → 从桌面图标启动 → 登录后开启通知。需要 iOS 16.4+。</p>
           <p v-else class="hint">Android 和桌面浏览器：使用 HTTPS 站点或 PWA，允许网站通知。实际送达取决于系统和浏览器。</p>
@@ -371,6 +460,7 @@ onBeforeUnmount(disconnect)
           <button v-if="!pushEnabled" class="primary" :disabled="pushBusy || !pushAvailable" @click="enablePush">开启本设备通知</button>
           <button v-else class="secondary" :disabled="pushBusy" @click="sendTestPush">发送测试通知</button>
           <button class="secondary" :disabled="pushBusy" @click="disablePush">{{ pushEnabled ? '关闭本设备通知' : '重置本机推送' }}</button>
+          </template>
           <button class="secondary" @click="clearLocal">清空当前会话本地记录</button>
           <button class="secondary" @click="changeServer">切换服务器</button>
           <button class="danger" @click="logout">退出登录</button>
