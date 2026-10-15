@@ -1179,7 +1179,31 @@ onBeforeUnmount(() => {
         </div>
         <div v-else class="room-list">
           <div class="list-title">聊天会话 <button class="link" @click="openNewGroup">+ 新建群聊</button></div>
-          <button v-for="r in filteredRooms" :key="r.id" class="room-item" :class="{ active: selectedId === r.id }" @click="selectRoom(r.id)"><span class="avatar" :class="{ group: r.type !== 'direct' }">{{ r.type === 'direct' ? '◉' : '#' }}</span><span class="room-copy"><strong>{{ roomLabel(r) }}</strong><small>{{ r.type === 'direct' ? '私人会话' : r.type === 'lobby' ? '同一服务器成员' : `${r.members.length} 位成员` }}</small></span></button>
+          <div v-for="r in filteredRooms" :key="r.id" role="button" tabindex="0"
+            class="room-item tg-room-item" :class="{ active: selectedId === r.id }"
+            @click="selectRoom(r.id)" @keydown.enter.prevent="selectRoom(r.id)">
+            <span class="avatar" :class="{ group: r.type !== 'direct' }">{{ roomAvatar(r) }}</span>
+            <span class="room-copy tg-room-copy">
+              <span class="tg-room-name"><strong>{{ roomLabel(r) }}</strong><span v-if="roomPinned(r.id)" title="本机置顶">📌</span><span v-if="roomMuted(r.id)" title="本机静音标记">🔕</span></span>
+              <small class="tg-room-preview">{{ previewRoom(r.id) }}</small>
+            </span>
+            <span class="tg-room-right">
+              <small>{{ roomTime(r.id) }}</small>
+              <span v-if="roomUnread(r.id)" class="tg-unread" :class="{ muted: roomMuted(r.id) }">{{ roomUnread(r.id)>99?'99+':roomUnread(r.id) }}</span>
+              <span class="tg-room-tools">
+                <button type="button" @click.stop="togglePinned(r.id)" :title="roomPinned(r.id)?'取消置顶':'本机置顶'">{{ roomPinned(r.id)?'取消置顶':'置顶' }}</button>
+                <button type="button" @click.stop="toggleMuted(r.id)" :title="roomMuted(r.id)?'取消静音标记':'本机静音标记'">{{ roomMuted(r.id)?'取消静音':'静音' }}</button>
+              </span>
+            </span>
+          </div>
+          <div v-if="chatSearch.trim() && searchedMessages.length" class="tg-global-results">
+            <h4>本机消息搜索结果</h4>
+            <button v-for="m in searchedMessages" :key="m.id" class="tg-search-result" @click="jumpToMessage(m)">
+              <strong>{{ roomLabel(rooms.find(r=>r.id===m.roomId)) }}</strong>
+              <span>{{ (m.text||m.attachment?.name||'').slice(0,95) }}</span>
+            </button>
+          </div>
+          <p v-if="chatSearch.trim() && !filteredRooms.length && !searchedMessages.length" class="empty-note">本机没有匹配的会话或消息</p>
         </div>
         <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : apiConnected ? 'HTTP 消息同步正常（WebSocket 未连接）' : '正在连接服务器' }}</footer>
       </aside>
@@ -1242,24 +1266,54 @@ onBeforeUnmount(() => {
             <span class="tg-peer-details"><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom ? activeSubtitle : '欢迎使用 ZzzMessage' }}</small></span>
           </button>
           <div class="tg-header-actions">
-            <button class="tg-round-btn" title="搜索聊天" @click="chatSearch=activeRoom ? roomLabel(activeRoom) : '';mobileChat=false">⌕</button>
+            <button class="tg-round-btn" title="搜索当前会话内容" @click="messageSearchOpen=!messageSearchOpen;messageSearch='';messageActions=''">⌕</button>
             <button class="tg-round-btn" title="会话资料" @click="infoOpen=!infoOpen">⋮</button>
           </div>
         </header>
+        <div v-if="messageSearchOpen" class="tg-inchat-search">
+          <input v-model="messageSearch" autofocus placeholder="搜索此聊天中的消息…" aria-label="搜索当前会话内容" />
+          <button @click="messageSearchOpen=false;messageSearch=''">关闭</button>
+          <div v-if="messageSearch.trim()" class="tg-inchat-results">
+            <button v-for="m in inRoomSearch" :key="m.id" @click="jumpToMessage(m)">
+              <small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small>
+              <span>{{ (m.text||m.attachment?.name||'').slice(0,150) }}</span>
+            </button>
+            <p v-if="!inRoomSearch.length">没有匹配的本机消息</p>
+          </div>
+        </div>
         <div ref="chatScroll" class="timeline">
           <div class="info-banner">消息会先由服务器保存到待投递队列，恢复连接后补发并留在本机；服务器收到收妥确认后删除待投递副本。当前不是端到端加密。</div>
           <p v-if="sortedMessages.length === 0" class="empty-chat">还没有本地聊天记录。发送第一条消息吧。</p>
-          <div v-for="m in sortedMessages" :key="m.id" class="message" :class="{ mine: m.sender === me.username }">
-            <div class="bubble">
-              <small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small>
+          <div v-for="m in sortedMessages" :key="m.id" class="message"
+            :data-message-id="m.id" :class="{ mine: m.sender === me.username, 'tg-message-highlight': highlightedId===m.id }">
+            <div class="bubble tg-message-bubble">
+              <div class="tg-message-top">
+                <small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small>
+                <button type="button" class="tg-message-options" :aria-label="'消息操作 '+m.id"
+                  @click.stop="messageActions=messageActions===m.id?'':m.id">⋯</button>
+              </div>
+              <button v-if="m.replyTo" type="button" class="tg-quoted"
+                @click="jumpToMessage(replyMessage(m.replyTo))">
+                ↩ {{ replyMessage(m.replyTo)?.text?.slice(0,100) || '被回复的消息尚未同步到本机' }}
+              </button>
               <p v-if="!m.attachment">{{ m.text }}</p>
               <button v-else class="tg-attachment" type="button" @click="downloadAttachment(m.attachment)" :title="m.attachment.name">
                 <span>📎</span><span><strong>{{ m.attachment.name }}</strong><small>{{ fileSize(m.attachment.size) }} · 下载文件</small></span><span>↓</span>
               </button>
+              <div v-if="messageActions===m.id" class="tg-message-menu">
+                <button type="button" @click="openReply(m)">↩ 回复</button>
+                <button type="button" @click="copyMessage(m)">⧉ 复制文本</button>
+                <button type="button" @click="beginForward(m)">➦ 转发文字</button>
+                <button type="button" @click="removeLocalMessage(m)">× 仅在本机删除</button>
+              </div>
             </div>
           </div>
         </div>
         <div class="tg-composer-area">
+          <div v-if="replyTo" class="tg-reply-composer">
+            <span><strong>正在回复 {{ replyTo.sender }}</strong><small>{{ replyTo.text?.slice(0,110)||replyTo.attachment?.name }}</small></span>
+            <button type="button" aria-label="取消回复" @click="replyTo=null">×</button>
+          </div>
           <div v-if="emojiOpen" class="tg-emoji-panel" role="group" aria-label="表情选择器">
             <button v-for="emoji in recentEmoji" :key="emoji" type="button" @click="insertEmoji(emoji)">{{ emoji }}</button>
           </div>
@@ -1267,11 +1321,26 @@ onBeforeUnmount(() => {
             <button type="button" class="tg-round-btn" :aria-label="emojiOpen?'关闭表情':'选择表情'" @click="emojiOpen=!emojiOpen">☺</button>
             <button type="button" class="tg-round-btn" title="发送文件（最多10MB）" :disabled="uploadBusy" @click="fileInput?.click()">📎</button>
             <input ref="fileInput" type="file" class="tg-file-input" @change="uploadAttachment" />
-            <input v-model="draft" maxlength="4000" placeholder="输入消息…" aria-label="消息正文" />
-            <button type="submit" class="tg-send-btn" :disabled="!draft.trim() || uploadBusy">{{ uploadBusy ? '…' : '➤' }}</button>
+            <textarea v-model="draft" maxlength="4000" rows="1" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"
+              aria-label="消息正文" @keydown.enter.exact.prevent="send"></textarea>
+            <button type="submit" class="tg-send-btn" :disabled="!draft.trim() || uploadBusy || sending">{{ uploadBusy ? '…' : '➤' }}</button>
           </form>
         </div>
         <div v-if="status" class="toast" role="alert">{{ status }} <button @click="status = ''" aria-label="关闭提示">×</button></div>
+      </div>
+      <div v-if="forwardSource" class="tg-modal-screen" @click.self="forwardSource=null">
+        <section class="tg-modal" role="dialog" aria-label="转发消息">
+          <h3>转发消息</h3>
+          <p>{{ forwardSource.text?.slice(0,220) }}</p>
+          <label>选择目标会话</label>
+          <select v-model="forwardTarget">
+            <option v-for="room in rooms" :key="room.id" :value="room.id">{{ roomLabel(room) }}</option>
+          </select>
+          <div class="tg-modal-actions">
+            <button type="button" @click="forwardSource=null">取消</button>
+            <button type="button" class="primary" :disabled="sending||!forwardTarget" @click="submitForward">转发</button>
+          </div>
+        </section>
       </div>
       <aside v-if="infoOpen && activeRoom && routePath === '/message'" class="tg-info">
         <header class="tg-info-top">
