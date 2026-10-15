@@ -240,3 +240,75 @@
     .app,.app.info-open {height:100%;min-height:0}
   }
 }
+
+
+/* Conversation navigation: message snippets, unread counts, local chat actions */
+.tg-room-item{display:flex;position:relative;cursor:pointer;text-align:left;width:100%;align-items:center}
+.tg-room-item:focus-visible{outline:2px solid #3390ec;outline-offset:-2px}
+.tg-room-copy{flex:1;min-width:0}
+.tg-room-name{display:flex;align-items:center;gap:5px;min-width:0}
+.tg-room-name strong{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tg-room-name span{font-size:12px}
+.tg-room-preview{display:block!important;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;color:#8493a4}
+.tg-room-right{align-self:stretch;flex:none;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;gap:2px;min-width:36px}
+.tg-room-right>small{font-size:11px;white-space:nowrap}
+.tg-unread{border-radius:99px;min-width:20px;height:20px;padding:1px 5px;background:#3390ec;color:#fff;font-weight:700;text-align:center;font-size:11px;line-height:19px}
+.tg-unread.muted{background:#a4b0be}
+.tg-room-tools{display:none;gap:3px;max-width:130px}
+.tg-room-tools button{padding:4px 5px;background:#e8effb;border-radius:6px;color:#306ca6;font-size:10px;white-space:nowrap}
+.tg-room-item:hover .tg-room-tools,.tg-room-item:focus-within .tg-room-tools{display:flex}
+.tg-room-item:hover .tg-unread{display:none}
+.room-item.active .tg-room-preview,.room-item.active .tg-room-right>small{color:#eef5ff}
+.room-item.active .tg-room-tools button{background:#ffffff36;color:#fff}
+.room-item.active .tg-unread{background:#fff;color:#2385df}
+.tg-global-results{padding:12px 5px;border-top:1px solid #e8ebf1;margin-top:12px}
+.tg-global-results h4{font-size:12px;color:#7a8ca3;margin:0 0 9px 6px}
+.tg-search-result{width:100%;display:flex;flex-direction:column;gap:3px;text-align:left;padding:9px 10px;border-radius:9px;color:#263146;background:transparent}
+.tg-search-result:hover{background:#edf4ff}
+.tg-search-result strong{font-size:12px}
+.tg-search-result span{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;color:#768599}
+.tg-inchat-search{padding:12px 16px;background:#fffffff2;box-shadow:0 1px 8px #273b4824;z-index:5;display:flex;gap:8px;flex-wrap:wrap}
+.tg-inchat-search>input{min-width:130px;flex:1;background:#eef2f6}
+.tg-inchat-search>button{border-radius:9px;padding:8px 15px;background:#edf3ff;color:#2677ba}
+.tg-inchat-results{width:100%;max-height:210px;overflow:auto;background:#fff;border-radius:11px;box-shadow:0 4px 15px #283b4820}
+.tg-inchat-results button{width:100%;text-align:left;background:transparent;padding:10px 13px;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #edf0f6}
+.tg-inchat-results button:hover{background:#edf5ff}
+.tg-inchat-results small{font-size:11px;color:#8995a9}
+.tg-inchat-results span{font-size:13px}
+.tg-inchat-results p{padding:12px 16px;font-size:12px}
+.tg-message-bubble{position:relative}
+.tg-message-top{display:flex;gap:10px;align-items:center;justify-content:space-between}
+.tg-message-options{width:26px;height:24px;border-radius:50%;display:grid;place-items:center;background:transparent;color:#8292a0;font-size:20px;opacity:0}
+.message:hover .tg-message-options,.message:focus-within .tg-message-options{opacity:1}
+.tg-message-options:hover{background:#e6eef9}
+.tg-message-menu{position:absolute;z-index:11;top:27px;right:4px;display:flex;flex-direction:column;background:#fff;padding:5px;border-radius:12px;box-shadow:0 7px 26px #26314655;min-width:158px}
+.tg-message-menu button{text-align:left;padding:9px 12px;border-radius:7px;background:transparent;color:#263146;font-size:13px}
+.tg-message-menu button:hover{background:#edf4ff}
+.tg-quoted{border-left:3px solid #3390ec;border-radius:5px;background:#3390ec14;padding:6px 9px;font-size:12px;text-align:left;max-width:100%;word-break:break-word;color:#4a7aa1;margin:6px 0 3px;display:block}
+.tg-message-highlight .bubble{outline:2px solid #4b9af1;animation:tg-highlight .8s ease-out}
+@keyframes tg-highlight{0%{box-shadow:0 0 0 8px #3592ef60}100%{box-shadow:0 1px 3px #2e395018}}
+.tg-reply-composer{background:#fffffff4;border-radius:12px 12px 0 0;padding:8px 15px;display:flex;justify-content:space-between;align-items:center;gap:12px;border-left:3px solid #3390ec}
+.tg-reply-composer>span{min-width:0;flex:1}
+.tg-reply-composer strong{display:block;color:#2779ba;font-size:12px}
+.tg-reply-composer small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#687a87}
+.tg-reply-composer button{font-size:22px;background:transparent;color:#718596}
+.tg-composer textarea{border:0;outline:none;box-shadow:none;resize:none;background:transparent;font:inherit;flex:1;min-width:0;min-height:39px;max-height:140px;padding:9px 7px;line-height:20px;color:#28364b}
+.tg-composer textarea:focus{outline:none;box-shadow:none}
+.tg-modal-screen{position:fixed;inset:0;z-index:999;background:#0c172a73;display:flex;align-items:center;justify-content:center;padding:20px}
+.tg-modal{width:min(440px,95vw);max-height:90vh;overflow:auto;border-radius:15px;background:white;padding:22px;box-shadow:0 10px 45px #1119}
+.tg-modal h3{margin:0 0 14px}
+.tg-modal p{background:#f2f5fa;padding:12px;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere;color:#667584;max-height:130px;overflow:auto}
+.tg-modal label{display:block;font-size:12px;margin:14px 0 7px}
+.tg-modal select{display:block;width:100%;padding:10px;border:1px solid #dae1ea;border-radius:10px;background:white}
+.tg-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+.tg-modal-actions button{padding:11px 19px;border-radius:9px}
+@media (max-width:680px) {
+  .tg-message-options{opacity:1}
+  .tg-room-tools{display:flex}
+  .tg-room-tools button{font-size:10px}
+  .tg-room-item:hover .tg-unread{display:block}
+  .tg-room-right{gap:4px}
+  .tg-composer textarea{font-size:16px}
+  .tg-inchat-search{padding:8px}
+  .tg-modal-screen{padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
+}
