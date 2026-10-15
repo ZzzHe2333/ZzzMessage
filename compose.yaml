@@ -11,6 +11,11 @@ services:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      XIAOMI_APP_SECRET: ${XIAOMI_APP_SECRET:-}
+      XIAOMI_PACKAGE_NAME: ${XIAOMI_PACKAGE_NAME:-}
+      VIVO_APP_ID: ${VIVO_APP_ID:-}
+      VIVO_APP_KEY: ${VIVO_APP_KEY:-}
+      VIVO_APP_SECRET: ${VIVO_APP_SECRET:-}
     volumes:
       - zzzmessage_data:/data
     networks:

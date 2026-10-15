@@ -36,6 +36,7 @@ type Server struct {
 	attempts sync.Mutex
 	recent   map[string][]time.Time
 	push *PushService
+	native *NativePushService
 }
 
 func NewServer(c Config) (*Server, error) {
@@ -108,6 +109,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/rooms", s.auth(s.createGroup))
 	mux.HandleFunc("POST /api/direct", s.auth(s.createDirect))
 	mux.HandleFunc("GET /api/ws", s.websocket)
+	mux.HandleFunc("GET /api/native-push/config", s.auth(s.nativePushConfig))
+	mux.HandleFunc("PUT /api/native-push/device", s.auth(s.nativePushRegister))
+	mux.HandleFunc("DELETE /api/native-push/device", s.auth(s.nativePushDelete))
+	mux.HandleFunc("POST /api/native-push/test", s.auth(s.nativePushTest))
 	mux.HandleFunc("GET /api/push/config", s.auth(s.pushConfig))
 	mux.HandleFunc("PUT /api/push/subscription", s.auth(s.putPush))
 	mux.HandleFunc("DELETE /api/push/subscription", s.auth(s.deletePush))

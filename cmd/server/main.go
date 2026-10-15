@@ -29,6 +29,10 @@ func main() {
 	if err := app.ConfigurePush(os.Getenv("VAPID_PUBLIC_KEY"), os.Getenv("VAPID_PRIVATE_KEY"), os.Getenv("VAPID_SUBJECT")); err != nil {
 		log.Fatal(err)
 	}
+	if err := app.ConfigureNativePush(chat.NativePushConfig{
+		XiaomiSecret: os.Getenv("XIAOMI_APP_SECRET"), XiaomiPackage: os.Getenv("XIAOMI_PACKAGE_NAME"),
+		VivoAppID: os.Getenv("VIVO_APP_ID"), VivoAppKey: os.Getenv("VIVO_APP_KEY"), VivoAppSecret: os.Getenv("VIVO_APP_SECRET"),
+	}); err != nil { log.Fatal(err) }
 	addr := env("LISTEN_ADDR", ":58463")
 	server := &http.Server{Addr: addr, Handler: app.Handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
 	log.Printf("ZzzMessage API listening on %s; server stores accounts and rooms, not chat messages", addr)

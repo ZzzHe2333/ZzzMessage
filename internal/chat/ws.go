@@ -131,6 +131,7 @@ func (s *Server) websocket(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				s.hub.broadcast(room, data)
 				s.queuePush(room, username)
+				s.queueNativePush(room, username)
 			}
 		default:
 			c.queue(map[string]any{"type": "error", "error": "不支持的消息类型"})

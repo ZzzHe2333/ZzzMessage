@@ -42,6 +42,7 @@ type Room struct {
 type diskState struct {
 	Users map[string]User `json:"users"`
 	Rooms map[string]Room `json:"rooms"`
+	NativeDevices map[string][]NativeDevice `json:"nativeDevices,omitempty"`
  Push map[string][]webpush.Subscription `json:"pushSubscriptions,omitempty"`
 }
 
