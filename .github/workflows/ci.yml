@@ -1,7 +1,10 @@
 name: CI
 on:
-  # Manual only. Never build automatically on commits or pull requests.
+  # Run only this user-requested validation branch.
   workflow_dispatch:
+  push:
+    branches:
+      - 'validation/2026-10-15-tg-ui-groups-files-push'
 jobs:
   go:
     runs-on: ubuntu-latest
