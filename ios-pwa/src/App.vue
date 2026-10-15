@@ -3,6 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { keepMessage, loadMessages, clearRoom } from './localMessages'
 
 const SERVER_KEY = 'zzzmessage.server'
+const ROUTES = new Set(['/login','/setting','/message','/friend'])
+const initialPath = ROUTES.has(location.pathname) ? location.pathname : '/login'
+const routePath = ref(initialPath)
 const server = ref(localStorage.getItem(SERVER_KEY) || location.origin)
 const editedServer = ref(server.value)
 const configured = ref(false)
@@ -54,12 +57,38 @@ const serverName = computed(() => { try { return new URL(server.value).host } ca
 const sortedMessages = computed(() => [...messages.value].sort((a,b) => a.createdAt.localeCompare(b.createdAt)))
 const selectedUsers = computed(() => users.value.filter(u => groupMembers.value.includes(u.username)))
 
+function isPrivateLANHost(hostname) {
+  const parts = hostname.split('.')
+  if (parts.length !== 4 || parts.some(p => !/^[0-9]{1,3}$/.test(p) || Number(p) > 255)) return false
+  const [a,b] = parts.map(Number)
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+}
+function syncRoute(next) {
+  routePath.value = next
+  showSettings.value = next === '/setting'
+  if (next === '/friend') { tab.value = 'people'; mobileChat.value = false }
+  if (next === '/message') tab.value = 'chats'
+  if (next === '/login') { showSettings.value = false; tab.value = 'chats' }
+}
+function navigate(path, replace = false) {
+  if (!ROUTES.has(path)) path = '/login'
+  if (path !== '/login' && !me.value) path = '/login'
+  if (location.pathname !== path) {
+    history[replace ? 'replaceState' : 'pushState']({}, '', path)
+  }
+  syncRoute(path)
+}
+function handlePopState() {
+  if (!ROUTES.has(location.pathname) || (location.pathname !== '/login' && !me.value)) {
+    navigate('/login',true)
+  } else syncRoute(location.pathname)
+}
 function normalizeAddress(value) {
   try {
     const url = new URL(value.trim())
-    if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost','127.0.0.1'].includes(url.hostname)))) throw Error('invalid')
+    if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && (['localhost','127.0.0.1'].includes(url.hostname) || isPrivateLANHost(url.hostname))))) throw Error('invalid')
     return url.origin
-  } catch { throw Error('请输入 HTTPS 服务器地址（本地开发允许 localhost HTTP）') }
+  } catch { throw Error('请输入 HTTPS 地址；HTTP 仅允许 localhost 或私有局域网 IPv4') }
 }
 function savedTokenKey() { return `zzzmessage.token:${server.value}` }
 function showError(err) { status.value = err?.message || '操作失败' }
@@ -103,6 +132,7 @@ async function authenticate() {
     localStorage.setItem(savedTokenKey(), data.token)
     me.value = data.user
     await initialize()
+    navigate('/message', true)
   } catch (err) { showError(err) }
   finally { busy.value = false }
 }
@@ -132,7 +162,7 @@ async function refresh() {
 }
 async function selectRoom(id) {
   selectedId.value = id
-  tab.value = 'chats'
+  navigate('/message')
   mobileChat.value = true
   messages.value = []
   if (!me.value) return
@@ -162,8 +192,13 @@ function connect() {
     else if (data.type === 'rooms_changed') await refresh()
     else if (data.type === 'error') status.value = data.error
     else if (data.type === 'message') {
-      // Local IndexedDB is the only persistence layer for message bodies.
-      try { await keepMessage(server.value, me.value.username, data) } catch (err) { showError(err) }
+      // Persist to local IndexedDB BEFORE acknowledging server-side queue deletion.
+      // Duplicate replay uses the message ID as the indexedDB key.
+      try { await keepMessage(server.value, me.value.username, data) }
+      catch (err) { showError(err); return }
+      if (generation === liveSession && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ack', id: data.id }))
+      }
       if (data.roomId === selectedId.value && !messages.value.some(m => m.id === data.id)) {
         messages.value.push(data)
         await scrollBottom()
@@ -375,6 +410,7 @@ async function logout() {
   localStorage.removeItem(savedTokenKey())
   token.value = ''; me.value = null; rooms.value = []; users.value = []; messages.value = []
   showSettings.value = false; status.value = ''
+  navigate('/login',true)
 }
 async function changeServer() {
   await logout()
@@ -384,12 +420,25 @@ async function changeServer() {
 }
 function formatTime(v) { try { return new Date(v).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' }) } catch { return '' } }
 onMounted(async () => {
+  window.addEventListener('popstate', handlePopState)
+  if (location.pathname === '/' || !ROUTES.has(location.pathname)) navigate('/login', true)
+  const wantedPath = routePath.value
   window.addEventListener('zzz:native-push', onNativePushEvent)
   window.addEventListener('zzz:native-push-error', onNativePushError)
   token.value = localStorage.getItem(savedTokenKey()) || ''
-  try { const health = await request('/api/health'); if (health.app === 'ZzzMessage') { checkedServer.value = true; configured.value = true; await resume() } } catch { configured.value = false }
+  try {
+    const health = await request('/api/health')
+    if (health.app === 'ZzzMessage') {
+      checkedServer.value = true
+      configured.value = true
+      await resume()
+    }
+  } catch { configured.value = false }
+  if (me.value) navigate(wantedPath === '/login' ? '/message' : wantedPath, true)
+  else navigate('/login',true)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('popstate', handlePopState)
   window.removeEventListener('zzz:native-push', onNativePushEvent)
   window.removeEventListener('zzz:native-push-error', onNativePushError)
   disconnect()
@@ -404,7 +453,7 @@ onBeforeUnmount(() => {
       <p class="muted">使用自己部署的 Go 后端。服务器之间账号与消息互相独立。</p>
       <label class="field-label">后端地址</label>
       <input v-model="editedServer" placeholder="https://chat.example.com" @keyup.enter="testServer" />
-      <p class="hint">必须支持 HTTPS 和 /api/health；本机 localhost 调试可使用 HTTP。</p>
+      <p class="hint">需支持 /api/health。公网请使用 HTTPS；局域网私有 IP 可使用 HTTP（此时无法启用 Web Push）。</p>
       <button class="primary" :disabled="busy" @click="testServer">{{ busy ? '正在检查...' : '验证并固定服务器' }}</button>
       <p v-if="status" class="error" role="alert">{{ status }}</p>
     </section>
@@ -431,17 +480,17 @@ onBeforeUnmount(() => {
       <aside class="sidebar">
         <header class="sidebar-head">
           <div class="brand"><span class="small-icon">Z</span><div><strong>ZzzMessage</strong><small>{{ serverName }}</small></div></div>
-          <button class="icon-button" aria-label="设置" @click="showSettings = !showSettings; newGroup = false">⚙</button>
+          <button class="icon-button" aria-label="设置" @click="navigate(showSettings ? '/message' : '/setting'); newGroup = false">⚙</button>
         </header>
         <div class="nav-tabs">
-          <button :class="{ chosen: tab === 'chats' }" @click="tab = 'chats'">会话</button>
-          <button :class="{ chosen: tab === 'people' }" @click="tab = 'people'; refresh()">联系人</button>
+          <button :class="{ chosen: tab === 'chats' }" @click="navigate('/message')">会话</button>
+          <button :class="{ chosen: tab === 'people' }" @click="navigate('/friend'); refresh()">联系人</button>
         </div>
         <div v-if="showSettings" class="sidebar-body">
           <h3>设置</h3>
           <p class="muted">账号：{{ me.displayName }} (@{{ me.username }})</p>
           <p class="muted">后端：{{ server }}</p>
-          <p class="hint">聊天正文只保存在各客户端的 IndexedDB；目前未做端到端或本地静态加密。</p>
+          <p class="hint">聊天正文首先存入服务端离线待投递队列（最多保留14天/每账号500条），客户端确认保存到 IndexedDB 后删除该账号待投递副本。当前没有端到端或本地静态加密。</p>
           <h3>{{ isNativeAndroid ? 'Android 原生系统推送' : 'Web / iPhone PWA 系统通知' }}</h3>
           <template v-if="isNativeAndroid">
             <p class="hint">厂商识别：{{ nativeManufacturer }}。首批支持 Xiaomi/Redmi、vivo/iQOO；仅在你主动同意后初始化 SDK。</p>
@@ -453,7 +502,7 @@ onBeforeUnmount(() => {
             <p v-if="!nativeSupported" class="hint">此 Android 设备暂不在首批厂商推送支持范围。</p>
           </template>
           <template v-else>
-          <p class="hint">系统通知只显示「收到新消息」，不包含正文。消息离线期间不补发。</p>
+          <p class="hint">系统通知只显示「收到新消息」，不包含正文。消息离线期间会在恢复连接后补发。</p>
           <p v-if="onIOS && !installedPWA" class="hint">iPhone：Safari 访问 HTTPS 网站 → 分享 → 添加到主屏幕 → 从桌面图标启动 → 登录后开启通知。需要 iOS 16.4+。</p>
           <p v-else class="hint">Android 和桌面浏览器：使用 HTTPS 站点或 PWA，允许网站通知。实际送达取决于系统和浏览器。</p>
           <p class="hint" role="status">{{ pushStatus }}</p>
@@ -464,7 +513,7 @@ onBeforeUnmount(() => {
           <button class="secondary" @click="clearLocal">清空当前会话本地记录</button>
           <button class="secondary" @click="changeServer">切换服务器</button>
           <button class="danger" @click="logout">退出登录</button>
-          <button class="link" @click="showSettings = false">返回聊天</button>
+          <button class="link" @click="navigate('/message')">返回聊天</button>
         </div>
         <div v-else-if="newGroup" class="sidebar-body">
           <h3>新建群聊</h3>
@@ -487,9 +536,9 @@ onBeforeUnmount(() => {
         <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : connection === 'connecting' ? '正在连接' : '连接中断，将自动重试' }}</footer>
       </aside>
       <div class="chat-pane">
-        <header class="chat-head"><button class="mobile-back" type="button" aria-label="返回会话" @click="mobileChat = false">‹ 返回</button><div><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom?.type === 'direct' ? '一对一私聊' : '实时消息 · 不保存云端历史' }}</small></div><button class="icon-button" title="刷新会话" @click="refresh">⟳</button></header>
+        <header class="chat-head"><button class="mobile-back" type="button" aria-label="返回会话" @click="mobileChat = false">‹ 返回</button><div><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom?.type === 'direct' ? '一对一私聊' : '离线自动补发 · 本地保存历史' }}</small></div><button class="icon-button" title="刷新会话" @click="refresh">⟳</button></header>
         <div ref="chatScroll" class="timeline">
-          <div class="info-banner">Web / Android / iPhone 共用 PWA。消息通知不包含正文，离线期间的聊天正文不会补发；当前不是端到端加密。</div>
+          <div class="info-banner">消息会先由服务器保存到待投递队列，恢复连接后补发并留在本机；服务器收到收妥确认后删除待投递副本。当前不是端到端加密。</div>
           <p v-if="sortedMessages.length === 0" class="empty-chat">还没有本地聊天记录。发送第一条消息吧。</p>
           <div v-for="m in sortedMessages" :key="m.id" class="message" :class="{ mine: m.sender === me.username }"><div class="bubble"><small>{{ m.sender }} · {{ formatTime(m.createdAt) }}</small><p>{{ m.text }}</p></div></div>
         </div>
