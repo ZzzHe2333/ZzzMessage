@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { keepMessage, keepMessages, loadMessages, loadAllMessages, clearRoom } from './localMessages'
+import { keepMessage, keepMessages, loadMessages, loadAllMessages, clearRoom, deleteLocalMessage } from './localMessages'
+import { scopeKey, conversationSummaries, sortConversations, searchLocalMessages, previewOf } from './chatUiState'
 
 const SERVER_KEY = 'zzzmessage.server'
 const ROUTES = new Set(['/login','/setting','/message','/friend','/gift','/money'])
@@ -30,6 +31,16 @@ const busy = ref(false)
 const tab = ref('chats')
 const groupName = ref('')
 const chatSearch = ref('')
+const allLocalMessages = ref([])
+const chatPrefs = ref({})
+const replyTo = ref(null)
+const messageActions = ref('')
+const messageSearchOpen = ref(false)
+const messageSearch = ref('')
+const highlightedId = ref('')
+const forwardSource = ref(null)
+const forwardTarget = ref('')
+const sending = ref(false)
 const menuOpen = ref(false)
 const infoOpen = ref(false)
 const emojiOpen = ref(false)
@@ -87,9 +98,24 @@ const roomLabel = r => {
   return users.value.find(u => u.username === username)?.displayName || username || '私聊'
 }
 const roomAvatar = r => (r?.type === 'direct' ? roomLabel(r).slice(0,1) : r?.type === 'group' ? '👥' : '💬')
-const filteredRooms = computed(() => rooms.value.filter(r =>
-  roomLabel(r).toLowerCase().includes(chatSearch.value.trim().toLowerCase())
-))
+const roomSummaries = computed(() => conversationSummaries(allLocalMessages.value,me.value?.username||'',chatPrefs.value))
+const filteredRooms = computed(() => sortConversations(rooms.value,roomSummaries.value,chatPrefs.value,chatSearch.value,roomLabel))
+const searchedMessages = computed(() => searchLocalMessages(
+  allLocalMessages.value,chatSearch.value,rooms.value.map(r=>r.id),25))
+const inRoomSearch = computed(() => searchLocalMessages(
+  allLocalMessages.value.filter(m=>m.roomId===selectedId.value),messageSearch.value,[selectedId.value],80))
+const roomUnread = id => roomSummaries.value[id]?.unread || 0
+const lastInRoom = id => roomSummaries.value[id]?.latest || null
+const previewRoom = id => {
+  const localDraft = readRoomDraft(id)
+  if(localDraft.trim()) return '草稿：'+localDraft.replace(/\s+/g,' ').slice(0,65)
+  return previewOf(lastInRoom(id),me.value?.username)
+}
+const roomTime = id => lastInRoom(id) ? formatTime(lastInRoom(id).createdAt) : ''
+const roomPinned = id => !!chatPrefs.value[id]?.pinned
+const roomMuted = id => !!chatPrefs.value[id]?.muted
+const replyMessage = id => allLocalMessages.value.find(m=>m.roomId===selectedId.value && m.id===id)
+
 const filteredPeople = computed(() => users.value.filter(u =>
   (u.displayName + ' ' + u.username).toLowerCase().includes(chatSearch.value.trim().toLowerCase())
 ))
@@ -111,6 +137,130 @@ function openNewGroup() {
   showSettings.value=false
   newGroup.value=true
   void refresh()
+}
+function prefStorageKey() {
+  return me.value ? scopeKey(server.value,me.value.username,'prefs') : ''
+}
+function readRoomDraft(roomId) {
+  if(!me.value || !roomId)return ''
+  try{return localStorage.getItem(scopeKey(server.value,me.value.username,'draft:'+roomId))||''}catch{return ''}
+}
+function persistRoomDraft(roomId,content){
+  if(!me.value||!roomId)return
+  try{
+    const key=scopeKey(server.value,me.value.username,'draft:'+roomId)
+    if(content)localStorage.setItem(key,content)
+    else localStorage.removeItem(key)
+  }catch{}
+}
+watch(draft,value=>{
+  if(me.value)persistRoomDraft(selectedId.value,value)
+},{flush:'sync'})
+function restoreChatPreferences(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(prefStorageKey())||'{}')
+    chatPrefs.value=saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{}
+  }catch{chatPrefs.value={}}
+}
+function setRoomPreference(roomId,changes){
+  if(!me.value||!roomId)return
+  chatPrefs.value={...chatPrefs.value,[roomId]:{...(chatPrefs.value[roomId]||{}),...changes}}
+  try{localStorage.setItem(prefStorageKey(),JSON.stringify(chatPrefs.value))}catch{}
+}
+function togglePinned(roomId){
+  setRoomPreference(roomId,{pinned:!roomPinned(roomId)})
+}
+function toggleMuted(roomId){
+  // Per-device visual notification preference; not a server-wide push mute.
+  setRoomPreference(roomId,{muted:!roomMuted(roomId)})
+}
+function chatIsVisible(){
+  return routePath.value==='/message' &&
+    document.visibilityState==='visible' &&
+    (window.innerWidth>680||mobileChat.value)
+}
+function markRoomRead(roomId){
+  if(!roomId||!chatIsVisible())return
+  const latest=roomSummaries.value[roomId]?.latest?.createdAt
+  if(!latest)return
+  if((chatPrefs.value[roomId]?.lastRead||'')>=latest)return
+  setRoomPreference(roomId,{lastRead:latest})
+}
+async function rebuildHistoryIndex(){
+  if(!me.value){allLocalMessages.value=[];return}
+  try {allLocalMessages.value=await loadAllMessages(server.value,me.value.username)}
+  catch(err){showError(Error('本机历史索引加载失败：'+(err?.message||err)))}
+}
+function localMessageAdded(message){
+  if(!allLocalMessages.value.some(m=>m.id===message.id && m.roomId===message.roomId))
+    allLocalMessages.value=[...allLocalMessages.value,message]
+}
+async function jumpToMessage(message){
+  if(!message)return
+  if(selectedId.value!==message.roomId)await selectRoom(message.roomId)
+  chatSearch.value=''
+  messageSearchOpen.value=false
+  await nextTick()
+  const match=Array.from(chatScroll.value?.querySelectorAll('[data-message-id]')||[])
+    .find(el=>el.dataset.messageId===message.id)
+  if(match){
+    match.scrollIntoView({behavior:'smooth',block:'center'})
+    highlightedId.value=message.id
+  }
+}
+function openReply(message){
+  replyTo.value=message
+  messageActions.value=''
+  emojiOpen.value=false
+  nextTick(()=>document.querySelector('.tg-composer textarea')?.focus())
+}
+async function copyMessage(message){
+  try{await navigator.clipboard.writeText(message.text||message.attachment?.name||'')
+    status.value='已复制消息文字'
+  }catch(err){status.value='复制失败：'+(err?.message||err)}
+  messageActions.value=''
+}
+function beginForward(message){
+  if(message.attachment){status.value='附件暂不支持一键转发，请先下载后重新上传';return}
+  forwardSource.value=message
+  forwardTarget.value=selectedId.value
+  messageActions.value=''
+}
+async function submitForward(){
+  if(!forwardSource.value||!forwardTarget.value||sending.value)return
+  sending.value=true
+  try{
+    const quote='↪ 转发消息\n'+forwardSource.value.text
+    const msg=await request('/api/messages/send',{
+      method:'POST',body:JSON.stringify({roomId:forwardTarget.value,text:quote.slice(0,4000)})
+    })
+    await acceptMessage(msg)
+    status.value='已转发到目标会话'
+    forwardSource.value=null
+  }catch(err){showError(err)}
+  finally{sending.value=false}
+}
+async function removeLocalMessage(message){
+  if(!me.value||!confirm('仅删除这台设备上的消息？其他设备和收件人仍会保留。'))return
+  try{
+    await deleteLocalMessage(server.value,me.value.username,message.roomId,message.id)
+    messages.value=messages.value.filter(m=>m.id!==message.id)
+    allLocalMessages.value=allLocalMessages.value.filter(m=>!(m.id===message.id&&m.roomId===message.roomId))
+    messageActions.value=''
+    status.value='仅已删除本机副本（不撤回其他设备消息）'
+  }catch(err){showError(err)}
+}
+function onChatShortcut(event){
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){
+    event.preventDefault()
+    document.querySelector('.tg-search input')?.focus()
+    mobileChat.value=false
+  }
+  if(event.key==='Escape'){
+    messageActions.value=''
+    messageSearchOpen.value=false
+    forwardSource.value=null
+  }
 }
 function insertEmoji(emoji){
   draft.value += emoji
@@ -297,6 +447,8 @@ async function resume() {
   catch { localStorage.removeItem(savedTokenKey()); token.value = ''; me.value = null }
 }
 async function initialize() {
+  restoreChatPreferences()
+  await rebuildHistoryIndex()
   await refresh()
   if (!rooms.value.some(r => r.id === selectedId.value)) selectedId.value = 'lobby'
   await selectRoom(selectedId.value)
@@ -322,7 +474,13 @@ async function refresh() {
 }
 async function selectRoom(id) {
   const sequence = ++roomLoadSequence
+  persistRoomDraft(selectedId.value,draft.value)
   selectedId.value = id
+  draft.value=readRoomDraft(id)
+  replyTo.value=null
+  messageActions.value=''
+  messageSearchOpen.value=false
+  messageSearch.value=''
   infoOpen.value = false
   emojiOpen.value = false
   navigate('/message')
@@ -339,6 +497,7 @@ async function selectRoom(id) {
     messages.value = Array.from(unique.values())
   } catch (err) { showError(err) }
   await scrollBottom()
+  markRoomRead(id)
 }
 async function scrollBottom() { await nextTick(); if (chatScroll.value) chatScroll.value.scrollTop = chatScroll.value.scrollHeight }
 function disconnect() {
@@ -377,6 +536,7 @@ function connect() {
     else if (data.type === 'sync_chunk') {
       try {
         await keepMessages(server.value,me.value.username,data.messages)
+        for(const message of data.messages)localMessageAdded(message)
         const seen=new Set(messages.value.map(m=>m.id))
         let added=false
         for (const msg of data.messages) {
@@ -401,6 +561,7 @@ function connect() {
     }
     else if (data.type === 'sync_done') {
       syncStatus.value = '已完成来自一个设备的历史合并（按消息 ID 去重）'
+      void rebuildHistoryIndex()
       syncBusy.value=false
     }
     else if (data.type === 'gift_received') {
@@ -437,9 +598,11 @@ async function acceptMessage(message){
     return
   }
   if (me.value?.username!==account || server.value!==origin) return
+  localMessageAdded(message)
   if(message.roomId===selectedId.value && !messages.value.some(m=>m.id===message.id)){
     messages.value.push(message)
     await scrollBottom()
+    markRoomRead(message.roomId)
   }
   // ACK only after IndexedDB commit; on failure the server replays safely.
   try {
@@ -607,15 +770,19 @@ async function send() {
   const text=draft.value.trim()
   if(!text || [...text].length>4000 || !me.value) return
   const roomID=selectedId.value
+  if(sending.value)return
+  sending.value=true
   try {
     // HTTP is compatible with all HTTPS reverse proxies; WebSocket remains
     // an optional low-latency delivery channel.
     const message=await request('/api/messages/send',{
-      method:'POST',body:JSON.stringify({roomId:roomID,text})
+      method:'POST',body:JSON.stringify({roomId:roomID,text,...(replyTo.value?.id?{replyTo:replyTo.value.id}:{})})
     })
     draft.value=''
+    replyTo.value=null
     await acceptMessage(message)
   }catch(err){showError(err)}
+  finally{sending.value=false}
 }
 async function direct(other) {
   status.value = ''
@@ -845,7 +1012,11 @@ async function testNativePush() {
 }
 async function clearLocal() {
   if (!me.value || !confirm('仅清除本设备当前会话的聊天记录，确认继续？')) return
-  try { await clearRoom(server.value, me.value.username, selectedId.value); messages.value = [] } catch (err) { showError(err) }
+  try {
+    await clearRoom(server.value,me.value.username,selectedId.value)
+    allLocalMessages.value=allLocalMessages.value.filter(m=>m.roomId!==selectedId.value)
+    messages.value=[]
+  } catch(err){showError(err)}
 }
 async function logout() {
   if (isNativeAndroid) await disableNativePush()
@@ -853,6 +1024,7 @@ async function logout() {
   disconnect()
   localStorage.removeItem(savedTokenKey())
   token.value = ''; me.value = null; rooms.value = []; users.value = []; messages.value = []
+  allLocalMessages.value=[];chatPrefs.value={};replyTo.value=null;messageActions.value=''
   showSettings.value = false; status.value = ''
   navigate('/login',true)
 }
@@ -865,6 +1037,7 @@ async function changeServer() {
 function formatTime(v) { try { return new Date(v).toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' }) } catch { return '' } }
 onMounted(async () => {
   window.addEventListener('popstate', handlePopState)
+  window.addEventListener('keydown',onChatShortcut)
   navigator.serviceWorker?.addEventListener('message',onPushOpen)
   document.addEventListener('visibilitychange',onVisibilityChange)
   const initialRoomFromPush=new URLSearchParams(location.search).get('room')
@@ -888,12 +1061,16 @@ onMounted(async () => {
   } else navigate('/login',true)
 })
 function onVisibilityChange(){
-  if(document.visibilityState==='visible')void pollPendingMessages()
+  if(document.visibilityState==='visible'){
+    void pollPendingMessages()
+    markRoomRead(selectedId.value)
+  }
 }
 onBeforeUnmount(() => {
   navigator.serviceWorker?.removeEventListener('message',onPushOpen)
   document.removeEventListener('visibilitychange',onVisibilityChange)
   window.removeEventListener('popstate', handlePopState)
+  window.removeEventListener('keydown',onChatShortcut)
   window.removeEventListener('zzz:native-push', onNativePushEvent)
   window.removeEventListener('zzz:native-push-error', onNativePushError)
   disconnect()
