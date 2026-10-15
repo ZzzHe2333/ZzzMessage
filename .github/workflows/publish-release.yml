@@ -1,8 +1,6 @@
 name: Publish ZzzMessage Release (explicit request)
 on:
-  push:
-    branches:
-      - "release-request/**"
+  workflow_dispatch:
 permissions:
   contents: write
   actions: read
