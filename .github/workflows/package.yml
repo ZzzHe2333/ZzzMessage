@@ -1,6 +1,9 @@
 name: Package (on request)
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'validation/2026-10-15-http-chat-preview-v4'
 permissions:
   contents: read
 jobs:
