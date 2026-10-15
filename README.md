@@ -1,5 +1,8 @@
 # ZzzMessage
 
+**跨平台发布：** Windows / Linux 原生 Go 二进制可以直接运行，并使用可选 WEB_DIR 在同一个端口提供编译后的 Vue 页面；Docker Compose 原有双容器部署方式保持兼容。安装与下载见 [docs/RELEASE.md](docs/RELEASE.md)。此版本的独立 iPhone PWA 另行打包，Android APK 不在本次构建范围内。
+
+
 ## 多端源码布局
 
 - Android 原生 APK 工程：[android/](android/)（Xiaomi、vivo 厂商推送，尚未编译）
