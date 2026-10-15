@@ -8,6 +8,10 @@ import (
   "encoding/json"
   "path/filepath"
   "net/http/httptest"
+  "net/http"
+  "io"
+  "strings"
+  "time"
   "testing"
 
   webpush "github.com/SherClockHolmes/webpush-go"
@@ -89,4 +93,60 @@ func TestBrowserPushJSONWithExpirationTime(t *testing.T) {
  w:=httptest.NewRecorder()
  s.Handler().ServeHTTP(w,req)
  if w.Code!=400{t.Fatalf("unknown JSON field accepted: %d",w.Code)}
+}
+
+
+type fakeApplePushTransport struct {code int; reply string}
+func (tr fakeApplePushTransport) RoundTrip(req *http.Request)(*http.Response,error){
+  return &http.Response{
+    StatusCode:tr.code,
+    Header:http.Header{"Apns-Id":[]string{"test-apns-id"}},
+    Body:io.NopCloser(strings.NewReader(tr.reply)),
+    Request:req,
+  },nil
+}
+func TestPushTestReportsProvider403WithoutSecrets(t *testing.T){
+  s:=testServer(t)
+  alice:=reg(t,s,"alice")
+  key,public,err:=webpush.GenerateVAPIDKeys()
+  if err!=nil{t.Fatal(err)}
+  if err:=s.ConfigurePush(public,key,"https://chat.example.com");err!=nil{t.Fatal(err)}
+  s.push.httpClient.Transport=fakeApplePushTransport{code:403,reply:\`{"reason":"BadJwtToken"}\`}
+  sub:=validTestPushSubscription(t,"https://web.push.apple.com/test/1234")
+  if err:=s.store.SavePush("alice",sub);err!=nil{t.Fatal(err)}
+  sent:=post(t,s.Handler(),"/api/push/test",nil,alice)
+  if sent.Code!=200{t.Fatalf("test enqueue failed: %d %s",sent.Code,sent.Body.String())}
+  var queued struct{Queued int \`json:"queued"\`;TestID string \`json:"testId"\`}
+  if err:=json.Unmarshal(sent.Body.Bytes(),&queued);err!=nil||queued.Queued!=1||len(queued.TestID)!=32{
+    t.Fatalf("queue response: %+v %v",queued,err)
+  }
+  done:=false
+  for deadline:=time.Now().Add(3*time.Second);time.Now().Before(deadline);{
+    req:=httptest.NewRequest("GET","/api/push/test-status",nil)
+    req.Header.Set("Authorization","Bearer "+alice)
+    resp:=httptest.NewRecorder()
+    s.Handler().ServeHTTP(resp,req)
+    if resp.Code!=200{t.Fatalf("poll HTTP %d",resp.Code)}
+    var result PushTestResult
+    if err:=json.Unmarshal(resp.Body.Bytes(),&result);err!=nil{t.Fatal(err)}
+    if result.Done==1{
+      if result.LastStatus!=403||result.Failed!=1||result.Delivered!=0||result.Reason!="BadJwtToken" {
+        t.Fatalf("invalid provider status %+v",result)
+      }
+      if strings.Contains(resp.Body.String(),sub.Endpoint)||
+        strings.Contains(resp.Body.String(),key) {t.Fatal("push secrets leaked to status response")}
+      done=true;break
+    }
+    time.Sleep(10*time.Millisecond)
+  }
+  if !done{t.Fatal("push worker never processed the mock Apple failure")}
+  unauth:=httptest.NewRecorder()
+  s.Handler().ServeHTTP(unauth,httptest.NewRequest("GET","/api/push/test-status",nil))
+  if unauth.Code!=401{t.Fatal("status not protected by login")}
+}
+func TestPushProviderRejectReasonFiltered(t *testing.T){
+  if reason:=pushProviderReason(strings.NewReader(\`{"reason":"BadJwtToken"}\`));reason!="BadJwtToken"{t.Fatal(reason)}
+  for _,payload:=range []string{\`{"reason":"<img src=x>"}\`,\`{"reason":"private key material"}\`,\`{"reason":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\`}{
+    if got:=pushProviderReason(strings.NewReader(payload));got!=""{t.Fatalf("unsafe provider reason: %q",got)}
+  }
 }
