@@ -12,3 +12,5 @@
 手动开发：在 ios-pwa/ 执行 npm install、npm run dev；手动部署前执行 npm run build。按照项目约定，代码提交不会自动构建。
 
 新版本使用 `/login`、`/message`、`/friend`、`/setting` 四路由；离线消息重新连接后补发，落入本机 IndexedDB 后 ACK。公网使用仍必须 HTTPS。
+
+还新增 `/gift`、`/money` 页面，并可通过同账号在线旧设备传入本地聊天记录。未上线的旧设备不能响应全量历史请求。

@@ -50,3 +50,7 @@ iOS 主屏幕 Web Push 经 Apple 的推送基础设施送达，但使用的是�
 - Apple 官方：https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers
 - WebKit：https://webkit.org/blog/13878/
 - MDN：https://developer.mozilla.org/en-US/docs/Web/API/PushManager/subscribe
+
+## 多设备历史同步说明
+
+同一账户多个客户端上线后，会通过 Go WebSocket 中继同步各客户端的本地 IndexedDB 记录，前提是至少一台旧设备仍保有记录且在线。服务器不会长期保存完整历史。推送服务仍只发送固定提醒，不包含礼物或聊天正文。

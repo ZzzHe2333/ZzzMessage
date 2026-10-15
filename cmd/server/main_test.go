@@ -19,6 +19,7 @@ func TestStaticSiteAndAPI(t *testing.T) {
   {"/","Vue App",200},{"/join/friend","Vue App",200},
   {"/login","Vue App",200},{"/setting","Vue App",200},
   {"/message","Vue App",200},{"/friend","Vue App",200},
+  {"/gift","Vue App",200},{"/money","Vue App",200},
   {"/assets/app.js","console.log",200},{"/api/health","API response",200},
   {"/assets/missing.js","",404},
  }{

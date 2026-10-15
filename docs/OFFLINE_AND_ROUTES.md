@@ -7,8 +7,10 @@
 - /message ：聊天页面和本地消息记录
 - /friend ：联系人及发起私聊
 - /setting ：个人设置和系统推送
+- /gift ：礼物商城、选择收礼人和赠送历史
+- /money ：三币种钱包和每日奖励
 
-这四条是 Vue SPA 的客户端路由，而不是四个独立服务。Go 通过 WEB_DIR 提供静态 index.html，Docker 由 Caddy 提供 index.html，WebSocket 和 REST 都仍然通过 /api/* 转发给 Go。DDNSTO 只需代理一个站点及全部路径，不需要建立四个穿透入口。
+这些页面是 Vue SPA 的客户端路由，而不是四个独立服务。Go 通过 WEB_DIR 提供静态 index.html，Docker 由 Caddy 提供 index.html，WebSocket 和 REST 都仍然通过 /api/* 转发给 Go。DDNSTO 只需代理一个站点及全部路径，不需要建立四个穿透入口。
 
 例： http://192.168.0.192:43555/login、/setting、/message、/friend 都能直接输入或刷新。未登录访问需要授权的页面会跳转 /login。
 
@@ -40,3 +42,9 @@ Windows 管理员 CMD 仅对 Private 网络中的 LocalSubnet 开启目标端口
 ## 版本
 
 本页描述 GitHub main 开发源码。此次按照用户先前约定未构建 Go/Vue、未运行测试，也未发布新版本；既有 v0.2.0-beta.1 不包含这些变更。
+
+## 同账号设备间历史同步
+
+新客户端登录后自动向其他在线的同账号设备请求 IndexedDB 历史记录；也可以在设置手动同步。历史逐片中转，每片收妥确认后继续，客户端按消息 ID 去重。本机制不同于云端永久存档：如果唯一拥有旧聊天记录的设备不在线，就必须等它上线；设备全丢失无法凭服务器恢复超过临时队列的历史。同账号一台设备接收并 ACK 实时消息，也不保证其他离线设备自动补收到消息，但设备同时上线后可相互补齐。
+
+新增 /gift 和 /money 的经济系统详情参见 [HISTORY_AND_ECONOMY.md](HISTORY_AND_ECONOMY.md)。
