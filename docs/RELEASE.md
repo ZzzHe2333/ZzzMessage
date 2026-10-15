@@ -10,7 +10,7 @@ Go 后端支持 Windows x64、Linux x64、Linux ARM64 原生程序，以及 Dock
 
 ## Windows
 
-解压 Windows ZIP，进入 ZzzMessage-windows-amd64 文件夹；复制 .env.example 为 .env，用记事本填写至少 12 位 INVITE_CODE 与至少 32 位随机 SESSION_SECRET；在 PowerShell 运行 .\start.ps1。
+解压 Windows ZIP，进入 ZzzMessage-windows-amd64 文件夹；复制 .env.example 为 .env，用记事本填写至少 12 位 INVITE_CODE 与至少 32 位随机 SESSION_SECRET；双击 `start.bat`（仅本机），或双击 `start-lan.bat`（允许局域网访问）；PowerShell 仍可运行 `start.ps1`。
 
 浏览器访问 http://127.0.0.1:58463 。Windows 包已经包含 Vue 前端静态文件，Go EXE 通过 WEB_DIR 直接托管网页，不需要安装 Node.js。默认仅监听本机回环地址。
 
@@ -43,3 +43,17 @@ Android 厂商推送需要开发者资质及官方 SDK，Android APK 和鸿蒙�
 现有 CI workflow 仍为手动触发。Package workflow 只在显式请求构建的 build-request/** 分支推送或手动运行时执行。main 日常提交不会触发打包。
 
 本次跨平台 Go 编译可以在 Linux GitHub Runner 上完成，但不等于已经在真实 Windows 系统、国产手机推送环境做过完整测试。
+
+## Windows BAT 局域网测试
+
+- 将发行包内的 `start.bat` 和 `start-lan.bat` 放在 `ZzzMessage.exe` 同级目录（旧版发行包可从仓库 `scripts/` 下载 BAT 文件后重命名）。
+- `start.bat` 默认只绑定 `127.0.0.1:58463`；`start-lan.bat` 绑定 `0.0.0.0:58463`。BAT 不受 PowerShell 的 .ps1 执行策略影响。
+- 在 `.env` 的 `ALLOWED_ORIGINS` 中加入你实际的局域网 IP，例如 `http://192.168.0.192:58463`；重启程序后生效。
+- 以管理员身份运行 CMD，并为专用网络添加仅限本地子网的入站防火墙规则（先确认本机网络配置文件为 Private）：
+
+  ```cmd
+  netsh advfirewall firewall add rule name="ZzzMessage LAN" dir=in action=allow protocol=TCP localport=58463 profile=private remoteip=localsubnet
+  ```
+
+- 然后其他设备访问 `http://你的电脑局域网IP:58463/api/health`，若成功再访问 `http://你的电脑局域网IP:58463`。
+- 局域网 HTTP 可用于短期聊天连通性测试，**不支持 iPhone PWA 的安全上下文/系统推送**，正式对外使用应配置可信 HTTPS。

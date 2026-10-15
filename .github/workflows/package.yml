@@ -45,6 +45,8 @@ jobs:
             cp docs/RELEASE.md "stage/ZzzMessage-$target/README.md"
           done
           cp scripts/start-windows.ps1 stage/ZzzMessage-windows-amd64/start.ps1
+          cp scripts/start-windows.bat stage/ZzzMessage-windows-amd64/start.bat
+          cp scripts/start-windows-lan.bat stage/ZzzMessage-windows-amd64/start-lan.bat
           cp scripts/start-linux.sh stage/ZzzMessage-linux-amd64/start.sh
           cp scripts/start-linux.sh stage/ZzzMessage-linux-arm64/start.sh
           chmod +x stage/ZzzMessage-linux-amd64/{start.sh,zzzmessage} stage/ZzzMessage-linux-arm64/{start.sh,zzzmessage}
