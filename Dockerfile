@@ -1,7 +1,7 @@
 FROM golang:1.23-alpine AS builder
 WORKDIR /src
 COPY go.mod ./
-RUN go mod download
+RUN go mod tidy
 COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /server ./cmd/server
