@@ -12,28 +12,87 @@ import (
 func TestVirtualCoinsDailyPersistence(t *testing.T) {
     s:=testServer(t)
     _=reg(t,s,"alice")
-    now:=time.Date(2026,10,15,12,30,0,0,time.UTC)
     before,err:=s.store.GetWallet("alice")
-    if err!=nil || before.Gold!=0||before.Silver!=0||before.Copper!=0 {t.Fatal("initial wallet",before,err)}
-    earned,err:=s.store.ClaimDaily("alice",now)
-    if err!=nil || earned.Gold!=1||earned.Silver!=5||earned.Copper!=150 {t.Fatal("daily reward",earned,err)}
-    _,err=s.store.ClaimDaily("alice",now.Add(3*time.Hour))
-    if err!=ErrAlreadyClaimed{t.Fatal("duplicate daily claim accepted",err)}
-    reread,err:=NewStore(filepath.Dir(s.store.path))
     if err!=nil{t.Fatal(err)}
-    saved,err:=reread.GetWallet("alice")
-    if err!=nil || saved!=earned{t.Fatal("daily reward lost after restart",saved,err)}
-    tomorrow,err:=reread.ClaimDaily("alice",now.Add(24*time.Hour))
-    if err!=nil || tomorrow.Gold!=2||tomorrow.Silver!=10||tomorrow.Copper!=300{t.Fatal("tomorrow reward",tomorrow,err)}
+    // Successful registration also authenticates the user, awarding one coin.
+    if before.Gold+before.Silver+before.Copper!=1 || before.LastReward==""{
+        t.Fatal("first registered session should award exactly one coin",before)
+    }
+    future:=time.Date(2035,10,15,12,30,0,0,time.UTC)
+    got,err:=s.store.claimDailyWithRoll("alice",future,func()(int,error){return 0,nil})
+    if err!=nil||got.Gold!=before.Gold+1||got.Silver!=before.Silver||got.Copper!=before.Copper||
+        got.LastReward!="gold" {t.Fatal("gold boundary failed",got,err)}
+    // No draw is allowed on a second login on the same UTC date.
+    _,err=s.store.claimDailyWithRoll("alice",future.Add(time.Hour),func()(int,error){
+        t.Fatal("duplicate daily reward consumed randomness")
+        return 0,nil
+    })
+    if err!=ErrAlreadyClaimed{t.Fatal("duplicate reward was allowed",err)}
+    reloaded,err:=NewStore(filepath.Dir(s.store.path))
+    if err!=nil{t.Fatal(err)}
+    saved,err:=reloaded.GetWallet("alice")
+    if err!=nil||saved!=got{t.Fatal("daily reward did not persist",saved,err)}
+    next,err:=reloaded.claimDailyWithRoll("alice",future.Add(24*time.Hour),func()(int,error){return 1,nil})
+    if err!=nil||next.Silver!=got.Silver+1||next.LastReward!="silver"{t.Fatal("silver boundary failed",next,err)}
+    third,err:=reloaded.claimDailyWithRoll("alice",future.Add(48*time.Hour),func()(int,error){return 10,nil})
+    if err!=nil||third.Copper!=next.Copper+1||third.LastReward!="copper"{t.Fatal("copper boundary failed",third,err)}
 }
-
+func TestDailyRewardWeights(t *testing.T){
+    counts:=map[string]int{}
+    for roll:=0;roll<100;roll++{counts[dailyCurrency(roll)]++}
+    if counts["gold"]!=1||counts["silver"]!=9||counts["copper"]!=90{
+        t.Fatalf("wrong daily lottery weights: %+v",counts)
+    }
+    if dailyCurrency(-1)!=""||dailyCurrency(100)!=""{t.Fatal("invalid draw was accepted")}
+}
+func TestDailyLoginOnceAcrossDevicesAndSessions(t *testing.T){
+    s:=testServer(t)
+    alice:=reg(t,s,"alice")
+    first,err:=s.store.GetWallet("alice")
+    if err!=nil||first.Gold+first.Silver+first.Copper!=1{t.Fatal("register award",first,err)}
+    login:=post(t,s.Handler(),"/api/auth/login",map[string]string{"username":"alice","password":"password123"},"")
+    if login.Code!=200{t.Fatal("login failed",login.Code,login.Body.String())}
+    var loginResponse struct{ DailyReward *struct{Currency string} `json:"dailyReward"` }
+    if err:=json.Unmarshal(login.Body.Bytes(),&loginResponse);err!=nil{t.Fatal(err)}
+    if loginResponse.DailyReward!=nil{t.Fatal("duplicate login awarded another coin")}
+    again,err:=s.store.GetWallet("alice")
+    if err!=nil||again!=first{t.Fatal("login credited wallet a second time",again,err)}
+    // Persistent PWA session check-in is also idempotent.
+    for i:=0;i<3;i++{
+        reply:=post(t,s.Handler(),"/api/money/daily",map[string]any{},alice)
+        if reply.Code!=200{t.Fatal("check-in status",reply.Code,reply.Body.String())}
+        var state struct{
+            Claimed bool `json:"claimed"`
+            Wallet Wallet `json:"wallet"`
+        }
+        if err:=json.Unmarshal(reply.Body.Bytes(),&state);err!=nil{t.Fatal(err)}
+        if state.Claimed||state.Wallet!=first{t.Fatal("idempotent check-in duplicated reward",state)}
+    }
+    // Simulate the next UTC day and authenticate from a second device.
+    s.store.mu.Lock()
+    edited:=s.store.state.Wallets["alice"]
+    edited.LastDaily=time.Now().UTC().Add(-24*time.Hour).Format("2006-01-02")
+    s.store.state.Wallets["alice"]=edited
+    s.store.mu.Unlock()
+    nextLogin:=post(t,s.Handler(),"/api/auth/login",map[string]string{"username":"alice","password":"password123"},"")
+    if nextLogin.Code!=200{t.Fatal(nextLogin.Code,nextLogin.Body.String())}
+    var next struct{DailyReward *struct{Currency string; Amount int} `json:"dailyReward"`}
+    if err:=json.Unmarshal(nextLogin.Body.Bytes(),&next);err!=nil{t.Fatal(err)}
+    if next.DailyReward==nil||next.DailyReward.Amount!=1{t.Fatal("next-day login did not award one coin",next)}
+    final,_:=s.store.GetWallet("alice")
+    if final.Gold+final.Silver+final.Copper!=2{t.Fatal("wrong accumulated coin count",final)}
+}
 func TestGiftAtomicAndIdempotent(t *testing.T){
     s:=testServer(t)
     _=reg(t,s,"alice")
     _=reg(t,s,"bob")
     now:=time.Now().UTC()
-    _,err:=s.store.ClaimDaily("alice",now)
-    if err!=nil{t.Fatal(err)}
+    // Deterministic seed for this gift test; sign-in rewards are random.
+    s.store.mu.Lock()
+    seeded:=s.store.state.Wallets["alice"]
+    seeded.Copper=150
+    s.store.state.Wallets["alice"]=seeded
+    s.store.mu.Unlock()
     id:="0123456789abcdef0123456789abcdef"
     bought,wallet,err:=s.store.BuyAndSendGift("alice","bob","flower",id,now)
     if err!=nil||bought.Price!=50||wallet.Copper!=100{t.Fatal("purchase failed",bought,wallet,err)}
