@@ -59,3 +59,53 @@ export async function clearRoom(server, username, roomId) {
     })
   } finally { db.close() }
 }
+
+
+// Import history chunks atomically on this device.
+export async function keepMessages(server, username, batch) {
+  if (!Array.isArray(batch) || batch.length > 8) throw Error('历史同步分片超出限制')
+  if (!batch.length) return
+  const db = await openDB()
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      const table = tx.objectStore(STORE)
+      for (const message of batch) {
+        if (!message?.id || !message?.roomId || !message?.createdAt || !message?.sender || typeof message.text !== 'string') {
+          tx.abort()
+          return
+        }
+        const space = server + '|' + username + '|' + message.roomId
+        table.put({ ...message, space, key: space + '|' + message.id })
+      }
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error || Error('历史同步写入失败'))
+      tx.onabort = () => reject(tx.error || Error('历史同步已中止'))
+    })
+  } finally { db.close() }
+}
+
+// Export this account's complete local IndexedDB records to another
+// authenticated device of the same user. Not saved permanently in Go.
+export async function loadAllMessages(server, username) {
+  const db = await openDB()
+  try {
+    const prefix = server + '|' + username + '|'
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly')
+      const result = []
+      const cursor = tx.objectStore(STORE).openCursor()
+      cursor.onsuccess = () => {
+        const c = cursor.result
+        if (!c) return
+        if (typeof c.value.key === 'string' && c.value.key.startsWith(prefix)) {
+          const { key, space, ...message } = c.value
+          result.push(message)
+        }
+        c.continue()
+      }
+      tx.oncomplete = () => resolve(result.sort((a,b) => a.createdAt.localeCompare(b.createdAt)))
+      tx.onerror = () => reject(tx.error || Error('读取聊天历史失败'))
+    })
+  } finally { db.close() }
+}
