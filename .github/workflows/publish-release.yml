@@ -69,7 +69,8 @@ jobs:
           ### 源码及构建
           - [成功的构建流程](https://github.com/ZzzHe2333/ZzzMessage/actions/runs/38693679907)，构建提交 a49bb1fea6010c5d547b42f5c0c0dddb98fba0fd。
           - Tag 指向主分支提交 b5e17a694186ce3a7133ef436addd71b4b28e898，代码与构建分支一致，仅构建触发工作流不同。
-                    NOTES
+          
+          NOTES
       - name: Publish GitHub prerelease with all assets
         run: |
           set -euo pipefail
