@@ -26,10 +26,10 @@ type NativeDevice struct {
   Provider string `json:"provider"`
   Token string `json:"token"`
 }
-var nativeTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_+=:./-]{12,1024}$`)
+var nativeTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_+=:./-]+$`)
 
 func validNativeDevice(d NativeDevice) bool {
-  return (d.Provider == "xiaomi" || d.Provider == "vivo") && nativeTokenPattern.MatchString(d.Token)
+  return (d.Provider == "xiaomi" || d.Provider == "vivo") && len(d.Token) >= 12 && len(d.Token) <= 1024 && nativeTokenPattern.MatchString(d.Token)
 }
 func (s *Store) SaveNativeDevice(user string, device NativeDevice) error {
   s.mu.Lock()
