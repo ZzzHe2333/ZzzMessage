@@ -8,7 +8,7 @@
 - /friend ：联系人及发起私聊
 - /setting ：个人设置和系统推送
 - /gift ：礼物商城、选择收礼人和赠送历史
-- /money ：三币种钱包和每日奖励
+- /money ：三币种钱包和每日自动登录奖励（金币1%／银币9%／铜币90%，每次仅1枚）
 
 这些页面是 Vue SPA 的客户端路由，而不是四个独立服务。Go 通过 WEB_DIR 提供静态 index.html，Docker 由 Caddy 提供 index.html，WebSocket 和 REST 都仍然通过 /api/* 转发给 Go。DDNSTO 只需代理一个站点及全部路径，不需要建立四个穿透入口。
 
