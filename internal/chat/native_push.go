@@ -157,7 +157,7 @@ func (s *Server) queueNativePush(room Room,sender string){
     for _,u:=range s.store.Users(sender){recipients=append(recipients,u.Username)}
   }
   for _,user:=range recipients{
-    if user==sender{continue}
+    if user==sender||s.store.IsRoomMuted(user,room.ID){continue}
     devices:=s.store.NativeFor(user)
     if len(devices)==0{continue}
     s.native.mu.Lock()

@@ -43,6 +43,7 @@ type diskState struct {
 	Users map[string]User `json:"users"`
 	Rooms map[string]Room `json:"rooms"`
 	Pending map[string][]ChatMessage `json:"pendingMessages,omitempty"`
+    MutedRooms map[string]map[string]bool `json:"mutedRooms,omitempty"`
     Attachments map[string]StoredAttachment `json:"attachments,omitempty"`
     PushPreviewsDisabled map[string]bool `json:"pushPreviewsDisabled,omitempty"`
 	Wallets map[string]Wallet `json:"wallets,omitempty"`

@@ -270,7 +270,7 @@ func (s *Server) queuePush(room Room,msg ChatMessage) {
    }
  }
  for _,username:=range recipients{
-   if username==msg.Sender{continue}
+   if username==msg.Sender || s.store.IsRoomMuted(username,room.ID){continue}
    subs:=s.store.PushFor(username)
    if len(subs)==0{continue}
    title,body:="ZzzMessage","收到一条新消息"

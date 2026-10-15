@@ -151,6 +151,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/me", s.auth(s.me))
 	mux.HandleFunc("GET /api/users", s.auth(s.users))
 	mux.HandleFunc("GET /api/rooms", s.auth(s.rooms))
+    mux.HandleFunc("GET /api/rooms/mutes",s.auth(s.getRoomMutes))
+    mux.HandleFunc("PUT /api/rooms/mutes",s.auth(s.updateRoomMute))
 	mux.HandleFunc("POST /api/rooms", s.auth(s.createGroup))
 	mux.HandleFunc("POST /api/direct", s.auth(s.createDirect))
 	mux.HandleFunc("GET /api/ws", s.websocket)
