@@ -70,3 +70,10 @@ Android 厂商推送需要开发者资质及官方 SDK，Android APK 和鸿蒙�
 main 源码增加 `POST /api/external/send`，需要独立 `EXTERNAL_SEND_KEY`（至少32位随机密钥）、`EXTERNAL_SEND_SENDER`（已注册专用机器人账号），可选 `EXTERNAL_SEND_RECIPIENTS` 限制发送目标。启动时检查配置，未配置时禁用。Docker Compose 同步透传以上三个环境变量。参见 [EXTERNAL_API.md](EXTERNAL_API.md)。
 
 **该接口在重新编译/打包新版程序前不可使用；旧 Windows EXE 不包含该路由。**
+
+
+## Telegram 风格 UI、群聊修复和附件（未发布源码）
+
+Windows/Linux/Web/iPhone PWA 源码增加搜索、会话资料、Emoji 和群成员同步；文件上传接口为 `POST /api/files/upload`，按 multipart/form-data 提交 `roomId` 与 `file`，下载使用 `GET /api/files/{id}` 并在请求头携带会话用户的 Bearer Token。默认 10 MiB/文件，数据在 `DATA_DIR/uploads` 中持久保存，备份时不能只复制 state.json。群创建后成员列表通过 /api/messages/pending 中的 rooms 同步。
+
+Windows Edge Web Push WNS 地址 `*.notify.windows.com` 已列入允许域名；更换过服务端或 VAPID 密钥的设备需要先通过应用按钮取消旧订阅，再开启新订阅。详情见 [TG_UI_FILES.md](TG_UI_FILES.md)。

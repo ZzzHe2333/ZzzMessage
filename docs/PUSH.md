@@ -84,3 +84,12 @@ LAN_ORIGIN_CIDRS=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
 ## 通知正文预览与 HTTP 消息兜底
 
 新版默认在系统通知中展示发件人、消息摘要，可能显示在锁屏。用户可在 /setting 关闭预览。Web Push 服务提供商能够传输通知内容；当前不是端到端加密。即便 DDNSTO 的 WebSocket Upgrade 未正确连接，前台客户端仍可通过经过认证的 HTTP API 获取离线消息。详见 HISTORY_AND_ECONOMY.md。
+
+
+## Edge/Android Push 订阅兼容性（main 开发版）
+
+合法的 Web Push endpoint 会使用不同提供商的 HTTPS 域名：Edge 常见 `*.notify.windows.com`，Chrome/Android 使用 `fcm.googleapis.com`，Firefox 为 `*.push.services.mozilla.com`，Safari 为 `*.push.apple.com`。服务端现在校验这些特定域名后保存订阅，不开放任意公网或私网 URL，避免 SSRF。
+
+如出现「开启失败：推送订阅无效或推送服务不受支持」，先确认浏览器地址为有效 HTTPS、系统通知权限已允许、后端 VAPID 公钥与本设备订阅一致，再在设置执行「重置本机推送」，随后手动点击「开启本设备通知」。重置本机推送不会清除 IndexedDB 聊天历史。此项不意味着普通 Android WebView 自动具备浏览器 PushManager；原生通知仍依赖对应 Android 推送桥/厂商 SDK。
+
+群内聊天文字、附件在服务端创建完成后会走同一套系统通知逻辑（用户可关闭预览）；群创建本身不产生通知。

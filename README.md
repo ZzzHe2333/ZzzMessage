@@ -152,3 +152,16 @@ cd web && npm run build
 支持独立接口 `POST /api/external/send`。调用方不必登录，只需提交 `Authorization: Bearer <EXTERNAL_SEND_KEY>`、JSON 的 `recipient` 与 `text`。服务器固定使用 `EXTERNAL_SEND_SENDER` 指定的**已注册机器人账号**发送私聊，自动创建与收件人的私聊房间，并走正常的 IndexedDB/离线队列、WebSocket 和通知投递。此 Key **仅可发送消息，不能调用登录态 API 或查询聊天历史**。
 
 将独立随机密钥及发送人添加到 .env（可通过 `EXTERNAL_SEND_RECIPIENTS` 限定收件人），未配置时接口返回 404、不影响原服务。详见 [外部发送接口使用指南](docs/EXTERNAL_API.md)。这些设置当前仅在 main 源码实现，原先打包的 EXE 不自动升级。
+
+
+## Telegram 风格界面、群聊同步与文件附件（main 开发版）
+
+桌面版改为可展开的三栏布局：会话搜索/菜单、当前会话、右侧会话资料；手机端会话列表与聊天内容分屏切换。浏览器标签会随会话名称变化。新增 Unicode 表情选择器和会话文件（单个最多 10 MiB）。
+
+**重要：** 文件字节保存在服务器 `DATA_DIR/uploads`，附件元数据存在 `DATA_DIR/state.json`；下载必须携带登录令牌，服务端验证请求人属于相应会话。上传消息使用现有离线队列/系统通知通道，老纯文本客户端仍能看到 `[文件] 文件名`。本地存储清理不删除服务器上的已上传文件。当前附件容量上限为整个服务器 2000 个文件（不是总磁盘配额），请定期备份文件目录与 state.json。
+
+Windows Edge 推送订阅现允许经安全 HTTPS 的 Microsoft WNS `*.notify.windows.com`；Chrome Android 的 FCM 及 Firefox/Apple 推送端点继续支持。浏览器更换 VAPID 公钥后需在设置中先「重置本机推送」，再点击「开启本设备通知」，不建议清空整个站点数据，因为 IndexedDB 的聊天历史可能因此丢失。
+
+群聊创建成功会自动进入群，群成员在 WebSocket 无法正常升级时也会通过 HTTPS 消息轮询获得最新群列表，成员文字和文件消息都进入离线队列。创建群这一动作本身不发送系统通知。
+
+详见 [TG 界面、附件与跨浏览器推送说明](docs/TG_UI_FILES.md)。**main 代码不同于已发布的 v0.3.0-beta.1；在打包/部署新的测试版前，原有 EXE 不会自动获得这些功能。**
