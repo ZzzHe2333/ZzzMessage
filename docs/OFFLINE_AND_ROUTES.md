@@ -48,3 +48,7 @@ Windows 管理员 CMD 仅对 Private 网络中的 LocalSubnet 开启目标端口
 新客户端登录后自动向其他在线的同账号设备请求 IndexedDB 历史记录；也可以在设置手动同步。历史逐片中转，每片收妥确认后继续，客户端按消息 ID 去重。本机制不同于云端永久存档：如果唯一拥有旧聊天记录的设备不在线，就必须等它上线；设备全丢失无法凭服务器恢复超过临时队列的历史。同账号一台设备接收并 ACK 实时消息，也不保证其他离线设备自动补收到消息，但设备同时上线后可相互补齐。
 
 新增 /gift 和 /money 的经济系统详情参见 [HISTORY_AND_ECONOMY.md](HISTORY_AND_ECONOMY.md)。
+
+## DDNSTO HTTP 消息兜底
+
+确保单个穿透域名完整代理 /api/*：其中新增 GET /api/messages/pending、POST /api/messages/send、POST /api/messages/ack。该 HTTP 兜底不依赖 WebSocket Upgrade。详见 HISTORY_AND_ECONOMY.md。
