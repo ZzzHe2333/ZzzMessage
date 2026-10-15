@@ -81,6 +81,7 @@ type pushDelivery struct {
   title string
   body string
   roomID string
+  messageID string
 }
 
 // Progress is stored per authenticated user only and contains no endpoint,
@@ -286,7 +287,7 @@ func (s *Server) queuePush(room Room,msg ChatMessage) {
    s.push.mu.Unlock()
    for _,sub:=range subs{
      s.enqueuePush(pushDelivery{user:username,subscription:sub,
-       title:title,body:body,roomID:room.ID})
+       title:title,body:body,roomID:room.ID,messageID:msg.ID})
    }
  }
 }
@@ -295,7 +296,7 @@ func (s *Server) pushWorker(svc *PushService) {
     title,body:=delivery.title,delivery.body
     if title==""{title="ZzzMessage"}
     if body==""{body="收到一条新消息"}
-    payload,_:=json.Marshal(map[string]string{"title":title,"body":body,"roomId":delivery.roomID,"url":"/message"})
+    payload,_:=json.Marshal(map[string]string{"title":title,"body":body,"roomId":delivery.roomID,"id":delivery.messageID,"url":"/message"})
     if !validPushSubscription(delivery.subscription) {
       svc.recordTestResult(delivery.user,delivery.testID,400,"InvalidSubscription")
       continue
