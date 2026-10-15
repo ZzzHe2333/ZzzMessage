@@ -1,5 +1,14 @@
 # ZzzMessage
 
+## 多端源码布局
+
+- Android 原生 APK 工程：[android/](android/)（Xiaomi、vivo 厂商推送，尚未编译）
+- iPhone PWA 独立源码：[ios-pwa/](ios-pwa/)
+- 普通网页版：[web/](web/)
+- 鸿蒙占位目录：[harmonyos/](harmonyos/)（没有客户端实现）
+- Go Android 通知协议说明：[docs/ANDROID_NATIVE_PUSH.md](docs/ANDROID_NATIVE_PUSH.md)
+
+
 一个供朋友使用、可自行选择后端的开源私人聊天 PWA。**Go 1.23 + Vue 3 + WebSocket + IndexedDB**。
 
 > **早期可测试版本（MVP），尚未进行外网生产安全审计。**
@@ -110,3 +119,7 @@ cd web && npm run build
 ## Web / Android / iPhone 系统通知
 
 完整配置步骤（含 iPhone 安装、VAPID 密钥、网络放行、测试方法和安全限制）请看 [docs/PUSH.md](docs/PUSH.md)。
+
+## Android 原生系统通知
+
+首批 Xiaomi 与 vivo 的设备注册及厂商发送代码已加入，SDK AAR、开发者凭证需要由部署者自行取得，尚未编译和真机验证。配置见 [android/README.md](android/README.md)。除非用户明确要求，仓库不自动执行 Android、Go 或 Vue 构建。
