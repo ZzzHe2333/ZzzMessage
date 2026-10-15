@@ -2,3 +2,31 @@
 
 .mobile-back{display:none;background:transparent;color:#5969d3;font-size:13px;white-space:nowrap;padding:8px 3px}
 @media(max-width:680px){.app{grid-template-columns:minmax(0,1fr)}.sidebar{width:100%;border-right:0}.app:not(.mobile-chat) .chat-pane{display:none}.app.mobile-chat .sidebar{display:none}.app.mobile-chat .chat-pane{display:flex}.sidebar-head{padding:20px 17px}.sidebar-head .brand>div:not(.small-icon){display:block}.nav-tabs{padding:2px 17px 15px;flex-direction:row}.list-title{padding:10px 11px;flex-direction:row;font-size:13px}.room-list{padding:0 10px}.room-item{justify-content:flex-start;padding:13px 12px}.room-copy{display:block}.sidebar-foot{font-size:12px;justify-content:flex-start;padding:15px 20px}.sidebar-body{position:static;flex:1}.mobile-back{display:block}.chat-head{gap:8px;padding:12px 10px}.chat-head>div{flex:1;min-width:0}.chat-head strong,.chat-head small{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}
+
+
+/* Virtual wallet and gift catalog. Works on desktop and narrow PWA screens. */
+.economy-pane{flex:1;min-width:0;min-height:0;overflow-y:auto;background:#fff;padding:26px 32px;color:#28334c}
+.economy-header h2{font-size:25px;margin:4px 0 9px}
+.economy-header p{color:#8791a7;font-size:13px;line-height:1.7}
+.coin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:22px 0}
+.coin-card{border:1px solid #e5eaf6;background:#f8faff;border-radius:16px;padding:21px 16px;display:flex;flex-direction:column;gap:7px}
+.coin-card span{font-size:14px;color:#56627d}.coin-card strong{font-size:32px;font-variant-numeric:tabular-nums}
+.coin-card small{color:#9aa4b9;letter-spacing:.05em}
+.economy-actions{background:#f8faff;border:1px solid #e5eaf6;border-radius:16px;padding:20px;margin:16px 0;line-height:1.7}
+.economy-actions h3{margin:0 0 10px}.economy-actions p{font-size:13px;color:#67728a}
+.economy-actions button{width:auto;margin:4px 8px 4px 0}
+.economy-actions select{display:block;width:100%;max-width:420px;padding:12px 14px;border-radius:10px;border:1px solid #d9dff0;background:#fff}
+.wallet-strip{font-size:13px;color:#576884;padding-top:12px}
+.gift-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-top:20px}
+.gift-card{border:1px solid #e8ecf6;border-radius:16px;background:white;min-height:220px;padding:18px 14px;display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.gift-icon{font-size:36px}.gift-card strong{font-size:16px}.gift-card small{min-height:33px;color:#8c94a7}
+.gift-card>div:nth-last-child(2){font-weight:600;font-size:14px}
+.gift-card .primary{width:100%;margin-top:auto}
+@media(max-width:680px){
+ .economy-pane{padding:16px;display:block}
+ .economy-pane .mobile-back{display:block}
+ .economy-header h2{font-size:21px}
+ .coin-grid{gap:7px}
+ .coin-card{padding:16px 9px}.coin-card strong{font-size:25px}
+ .gift-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

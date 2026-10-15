@@ -653,8 +653,8 @@ onBeforeUnmount(() => {
           <button class="icon-button" aria-label="设置" @click="navigate(showSettings ? '/message' : '/setting'); newGroup = false">⚙</button>
         </header>
         <div class="nav-tabs">
-          <button :class="{ chosen: tab === 'chats' }" @click="navigate('/message')">会话</button>
-          <button :class="{ chosen: tab === 'people' }" @click="navigate('/friend'); refresh()">联系人</button>
+          <button :class="{ chosen: routePath === '/message' }" @click="navigate('/message')">会话</button>
+          <button :class="{ chosen: routePath === '/friend' }" @click="navigate('/friend'); refresh()">联系人</button>
           <button :class="{ chosen: routePath === '/gift' }" @click="navigate('/gift')">礼物</button>
           <button :class="{ chosen: routePath === '/money' }" @click="navigate('/money')">钱包</button>
         </div>

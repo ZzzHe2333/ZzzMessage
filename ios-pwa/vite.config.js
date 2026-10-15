@@ -11,7 +11,7 @@ export default defineConfig({
     includeAssets: ['apple-touch-icon.png'],
     manifest: {
       id: '/', name: 'ZzzMessage 私人聊天', short_name: 'ZzzMessage',
-      description: '邀请制私人聊天，消息不持久存储在服务器',
+      description: '邀请制私人聊天，本地历史同步、离线补发和虚拟礼物',
       theme_color: '#171d32', background_color: '#f4f5f9', display: 'standalone',
       start_url: '/', scope: '/',
       icons: [
