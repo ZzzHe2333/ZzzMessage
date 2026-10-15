@@ -1,0 +1,7 @@
+# Copy to local.properties. Android Studio will add sdk.dir.
+# Xiaomi AppId/AppKey and vivo AppId/AppKey are CLIENT identifiers.
+# NEVER put vendor AppSecrets here; keep them on the Go server.
+XIAOMI_APP_ID=
+XIAOMI_APP_KEY=
+VIVO_APP_ID=
+VIVO_APP_KEY=

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application
+        android:label="@string/app_name"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:usesCleartextTraffic="false"
+        android:allowBackup="false"
+        android:supportsRtl="true">
+        <!-- vivo SDK library also merges vendor-required components. -->
+        <meta-data android:name="com.vivo.push.app_id" android:value="${vivoAppId}" />
+        <meta-data android:name="com.vivo.push.api_key" android:value="${vivoAppKey}" />
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".XiaomiReceiver" android:exported="true">
+            <intent-filter><action android:name="com.xiaomi.mipush.RECEIVE_MESSAGE" /></intent-filter>
+            <intent-filter><action android:name="com.xiaomi.mipush.MESSAGE_ARRIVED" /></intent-filter>
+            <intent-filter><action android:name="com.xiaomi.mipush.ERROR" /></intent-filter>
+        </receiver>
+    </application>
+</manifest>
