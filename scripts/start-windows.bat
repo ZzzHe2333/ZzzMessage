@@ -21,14 +21,16 @@ if not exist ".env" (
 )
 
 set "WEB_DIR=%CD%\web"
+set "ZZZ_PORT=58463"
+if not "%~2"=="" set "ZZZ_PORT=%~2"
 if /I "%~1"=="lan" (
-  set "LISTEN_ADDR=0.0.0.0:58463"
-  echo [ZzzMessage] LAN mode: binding to all network interfaces, port 58463.
-  echo [ZzzMessage] IMPORTANT: Add http://YOUR_LAN_IP:58463 to ALLOWED_ORIGINS in .env.
+  set "LISTEN_ADDR=0.0.0.0:%ZZZ_PORT%"
+  echo [ZzzMessage] LAN mode: binding to all interfaces, port %ZZZ_PORT%.
+  echo [ZzzMessage] LAN origins allowed by LAN_ORIGIN_CIDRS in .env.
   echo [ZzzMessage] Use a Private-network, LocalSubnet-only Windows Firewall rule.
 ) else (
-  set "LISTEN_ADDR=127.0.0.1:58463"
-  echo [ZzzMessage] Local mode: http://127.0.0.1:58463
+  set "LISTEN_ADDR=127.0.0.1:%ZZZ_PORT%"
+  echo [ZzzMessage] Local mode: http://127.0.0.1:%ZZZ_PORT%
 )
 echo [ZzzMessage] Static web directory: %WEB_DIR%
 echo [ZzzMessage] Press Ctrl+C to stop the server.

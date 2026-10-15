@@ -25,7 +25,7 @@ services:
     build: ./web
     restart: unless-stopped
     ports:
-      - "127.0.0.1:${APP_PORT:-58463}:80"
+      - "${BIND_HOST:-127.0.0.1}:${APP_PORT:-58463}:80"
     depends_on:
       - server
     networks:
