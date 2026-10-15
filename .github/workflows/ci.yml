@@ -2,6 +2,9 @@ name: CI
 on:
   # Manual only. Never build automatically on commits or pull requests.
   workflow_dispatch:
+  push:
+    branches:
+      - 'validation/2026-10-15-tg-ui-groups-files-push-v2'
 jobs:
   go:
     runs-on: ubuntu-latest
