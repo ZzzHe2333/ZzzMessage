@@ -312,3 +312,23 @@
   .tg-inchat-search{padding:8px}
   .tg-modal-screen{padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom))}
 }
+
+/* Telegram-style day dividers and synchronized emoji reactions. */
+.tg-day-divider {
+ display:table;margin:14px auto 12px;padding:6px 13px;
+ border-radius:100px;background:#ffffffb9;color:#728097;
+ font-size:12px;font-weight:600;box-shadow:0 1px 5px #1a33431a;
+}
+.tg-message-reactions{display:flex;gap:4px;flex-wrap:wrap;margin-top:7px}
+.tg-message-reactions button {
+ padding:4px 8px;border-radius:25px;background:#e8f0ffcc;
+ color:#4d6179;font-size:13px;display:inline-flex;align-items:center;gap:4px;
+ border:1px solid #dce9fb;
+}
+.tg-message-reactions button.mine {background:#cce8ff;border-color:#87bcee}
+.tg-reaction-quick{display:flex;flex-wrap:wrap;justify-content:space-between;border-bottom:1px solid #e4e9ef;padding:7px 3px;gap:2px}
+.tg-reaction-quick button {font-size:20px;padding:5px!important;border-radius:8px}
+@media(max-width:680px){
+ .tg-day-divider{font-size:11px;margin:10px auto 7px}
+ .tg-reaction-quick button{font-size:19px}
+}
