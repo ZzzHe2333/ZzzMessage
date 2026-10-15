@@ -1,2 +1,100 @@
 # ZzzMessage
-ZMG is 啊
+
+一个供朋友使用、可自行选择后端的开源私人聊天 PWA。**Go 1.23 + Vue 3 + WebSocket + IndexedDB**。
+
+> **早期可测试版本（MVP），尚未进行外网生产安全审计。**
+>
+> **服务器不会持久化聊天正文，但不是端到端加密（E2EE）。** 服务器在转发时能看到明文；手机/浏览器 IndexedDB 中的本地聊天记录也尚未加密。离线时的消息不缓存、不补发。
+
+## 已实现
+
+- 邀请码注册，bcrypt 密码哈希，7 天 HMAC 签名登录令牌。
+- 可手动填写 HTTPS 后端地址，校验后自动记住，下次打开继续使用。
+- Go WebSocket 实时聊天：好友大厅、两人私聊、最多 30 人的邀请制小群。
+- 按用户/服务器/房间隔离本地 IndexedDB 消息记录；服务器**仅保存账号与群组元数据**。
+- 多设备可同时在线，但**历史消息不会同步**；每台设备只保留自己在线收到的消息。
+- 断开后自动重连；Web PWA 支持 iPhone/Android 添加到主屏幕。
+- Origin 白名单、JSON 请求限制、邀请制注册、简单的认证请求频率限制。
+- Docker Compose 运行，提供测试接口和 Go 测试。
+
+未实现：离线消息、文件/图片/语音、APNs/Web Push 通知、消息端到端加密、客户端本地静态加密、登录会话吊销、管理员管理后台、审核/举报系统、机器人 API。**不要把当前 MVP 当成已满足公开运营或应用商店上架要求的产品。**
+
+## 快速启动（Docker，Ubuntu / Windows Docker）
+
+```bash
+git clone https://github.com/ZzzHe2333/ZzzMessage.git
+cd ZzzMessage
+cp .env.example .env
+# 编辑 .env：邀请码和 SESSION_SECRET 必须替换！
+# 可以使用 openssl rand -hex 32 生成随机密钥和邀请码
+docker compose up -d --build
+```
+
+本机访问 `http://localhost:8080`，填写同一地址或直接点「验证并固定服务器」。第一次使用选择邀请码注册。
+
+Docker 默认仅绑定 `127.0.0.1:8080`，**不会直接向整个公网开放**。其他设备必须通过你设置的 HTTPS 反向代理/私有组网访问，并将公网前端来源（如 `https://chat.example.com`）加入 `.env` 中的 `ALLOWED_ORIGINS`，修改后重建容器：`docker compose up -d --force-recreate`。
+
+公网 TLS 可以由你自己的 Caddy/Nginx/Tailscale Serve/Cloudflare Tunnel 等提供。**iPhone PWA 与浏览器跨域连接需要有效的 HTTPS 证书**；纯 IP HTTP 不适合远程 PWA。使用反向代理时，将站点请求转发到宿主机本地 `127.0.0.1:8080`；公开的只应是 HTTPS 站点，不要同时绕开 TLS 暴露后端 8080 端口。
+
+## 本地开发
+
+```bash
+# 终端1（在项目根目录，先设置随机强密钥）
+export INVITE_CODE="replace_with_your_secret_invite"
+export SESSION_SECRET="replace_with_at_least_32_random_characters"
+export ALLOWED_ORIGINS="http://localhost:5173,http://localhost:8080"
+go run ./cmd/server
+
+# 终端2
+cd web
+npm install
+npm run dev
+```
+
+打开 `http://localhost:5173`，输入后端 `http://localhost:8080`。
+
+## 后端 API
+
+| 方法 | 路径 | 功能 |
+|---|---|---|
+| GET | `/api/health` | 版本、兼容性检测 |
+| POST | `/api/auth/register` | 邀请注册：`username,displayName,password,inviteCode` |
+| POST | `/api/auth/login` | 登录：`username,password` |
+| GET | `/api/me` | 当前用户 |
+| GET | `/api/users` | 服务器其他用户 |
+| GET | `/api/rooms` | 当前用户参与的会话 |
+| POST | `/api/direct` | 与用户私聊：`username` |
+| POST | `/api/rooms` | 创建小群：`name,members` |
+| GET | `/api/ws` | WebSocket 连接，第一帧 `{ "type":"auth", "token":"..." }` |
+
+REST 使用 `Authorization: Bearer <token>`。WS 发消息：
+
+```json
+{"type":"message","roomId":"lobby","text":"你好"}
+```
+
+客户端收到：
+
+```json
+{"type":"message","id":"server-generated-id","roomId":"lobby","sender":"alice","text":"你好","createdAt":"2026-10-15T00:00:00Z"}
+```
+
+服务器仅广播给**当前在线、具有房间权限**的连接；不会在重连时重放消息。私聊成员由后端检查，不能通过修改前端的 roomId 绕过授权。
+
+## 数据与安全限制
+
+- `DATA_DIR/state.json` 保存用户名、昵称、bcrypt 哈希和房间成员数据；没有任何聊天正文持久化逻辑。状态文件权限 `0600`，目录默认 `0700`。备份此目录时仍要保护账户隐私。
+- 前端 IndexedDB 会持久化**明文**聊天记录；同一设备上可以从浏览器开发者工具查看。个人设备启用系统锁屏和磁盘加密。若要存敏感信息，后续必须实现审计过的端到端加密和本地加密方案。
+- 服务器可见连接 IP、消息内容（转发期间）及房间成员。零历史存储 **≠** 匿名、零元数据、端到端加密。
+- 令牌在当前 MVP 存在浏览器 localStorage，存在 XSS 后被盗取的风险；使用 CSP、避免第三方脚本与富文本渲染，公开互联网使用前应强化会话管理。
+- 不支持 iPhone 原生离线推送；关闭网页/设备离线期间没有消息补发。
+- 邀请码是服务端部署者共享的秘密，别放进 GitHub。公开部署时还应配置反向代理限流、监控、HTTPS、安全更新与定期备份。
+
+## 测试
+
+```bash
+go test ./...
+cd web && npm run build
+```
+
+项目开源并不等于已取得在中国大陆公众提供即时通讯服务所需的备案/经营资质。本项目首先定位为少量熟人自托管测试用途。
