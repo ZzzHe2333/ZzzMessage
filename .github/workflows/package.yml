@@ -25,11 +25,13 @@ jobs:
         working-directory: web
         run: |
           npm install --no-audit --no-fund
+          npm test
           npm run build
       - name: Build iPhone PWA
         working-directory: ios-pwa
         run: |
           npm install --no-audit --no-fund
+          npm test
           npm run build
       - name: Assemble compiled distributions
         shell: bash
