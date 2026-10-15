@@ -47,6 +47,8 @@ const menuOpen = ref(false)
 const infoOpen = ref(false)
 const emojiOpen = ref(false)
 const uploadBusy = ref(false)
+const mediaPreview = ref(null)
+const dragOverChat = ref(false)
 const fileInput = ref(null)
 const recentEmoji = ['😀','😁','😂','🥰','😍','😘','😎','😭','🙏','👍','❤️','🎉','🔥','🌷','☕','🤝','💡','✅','😴','🥳','🌈','💬','👌','👀']
 
@@ -288,6 +290,10 @@ function fileSize(bytes){
 async function uploadAttachment(event){
   const file=event.target.files?.[0]
   event.target.value=''
+  if(file)await sendAttachmentFile(file)
+}
+async function sendAttachmentFile(file){
+
   if(!file||!me.value)return
   if(file.size>10*1024*1024){showError(Error('单个文件最多10MB'));return}
   if(!file.size){showError(Error('不能发送空文件'));return}
@@ -306,6 +312,38 @@ async function uploadAttachment(event){
     await acceptMessage(data)
   }catch(err){showError(err)}
   finally{uploadBusy.value=false}
+}
+async function showAttachment(attachment){
+  if(!attachment?.id)return
+  if(!/^(image\/(png|jpeg|gif|webp)|audio\/|video\/)/i.test(attachment.mime||'')){
+    await downloadAttachment(attachment)
+    return
+  }
+  try{
+    const res=await fetch(server.value+'/api/files/'+encodeURIComponent(attachment.id),{
+      headers:{Authorization:'Bearer '+token.value},cache:'no-store'
+    })
+    if(!res.ok)throw Error('查看媒体失败：HTTP '+res.status)
+    const blob=await res.blob()
+    closeMediaPreview()
+    const url=URL.createObjectURL(blob)
+    mediaPreview.value={url,mime:attachment.mime,name:attachment.name}
+  }catch(err){showError(err)}
+}
+function closeMediaPreview(){
+  if(mediaPreview.value?.url)URL.revokeObjectURL(mediaPreview.value.url)
+  mediaPreview.value=null
+}
+async function handleFileDrop(event){
+  dragOverChat.value=false
+  const file=event.dataTransfer?.files?.[0]
+  if(file)await sendAttachmentFile(file)
+}
+async function pasteFile(event){
+  const file=Array.from(event.clipboardData?.files||[])[0]
+  if(!file)return
+  event.preventDefault()
+  await sendAttachmentFile(file)
 }
 async function downloadAttachment(attachment){
   if(!attachment?.id)return
@@ -1045,6 +1083,7 @@ async function logout() {
   if (isNativeAndroid) await disableNativePush()
   else await disablePush()
   disconnect()
+  closeMediaPreview()
   localStorage.removeItem(savedTokenKey())
   token.value = ''; me.value = null; rooms.value = []; users.value = []; messages.value = []
   allLocalMessages.value=[];chatPrefs.value={};replyTo.value=null;messageActions.value=''
@@ -1097,6 +1136,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('zzz:native-push', onNativePushEvent)
   window.removeEventListener('zzz:native-push-error', onNativePushError)
   disconnect()
+  closeMediaPreview()
 })
 </script>
 
@@ -1281,7 +1321,8 @@ onBeforeUnmount(() => {
           <p v-if="!giftHistory.length">暂无礼物记录</p>
         </div>
       </section>
-      <div v-else class="chat-pane">
+      <div v-else class="chat-pane" :class="{ 'tg-drag-active':dragOverChat }"
+        @dragover.prevent="dragOverChat=true" @dragleave.self="dragOverChat=false" @drop.prevent="handleFileDrop">
         <header class="chat-head tg-chat-head">
           <button class="mobile-back tg-back" type="button" aria-label="返回会话" @click="mobileChat=false">‹</button>
           <button class="tg-peer" type="button" @click="infoOpen=!infoOpen" title="查看会话资料">
@@ -1322,7 +1363,7 @@ onBeforeUnmount(() => {
                 ↩ {{ replyMessage(m.replyTo)?.text?.slice(0,100) || '被回复的消息尚未同步到本机' }}
               </button>
               <p v-if="!m.attachment">{{ m.text }}</p>
-              <button v-else class="tg-attachment" type="button" @click="downloadAttachment(m.attachment)" :title="m.attachment.name">
+              <button v-else class="tg-attachment" type="button" @click="showAttachment(m.attachment)" :title="m.attachment.name">
                 <span>📎</span><span><strong>{{ m.attachment.name }}</strong><small>{{ fileSize(m.attachment.size) }} · 下载文件</small></span><span>↓</span>
               </button>
               <div v-if="reactionsFor(m.id).length" class="tg-message-reactions">
@@ -1357,11 +1398,20 @@ onBeforeUnmount(() => {
             <button type="button" class="tg-round-btn" title="发送文件（最多10MB）" :disabled="uploadBusy" @click="fileInput?.click()">📎</button>
             <input ref="fileInput" type="file" class="tg-file-input" @change="uploadAttachment" />
             <textarea v-model="draft" maxlength="4000" rows="1" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"
-              aria-label="消息正文" @keydown.enter.exact.prevent="send"></textarea>
+              aria-label="消息正文" @keydown.enter.exact.prevent="send" @paste="pasteFile"></textarea>
             <button type="submit" class="tg-send-btn" :disabled="!draft.trim() || uploadBusy || sending">{{ uploadBusy ? '…' : '➤' }}</button>
           </form>
         </div>
         <div v-if="status" class="toast" role="alert">{{ status }} <button @click="status = ''" aria-label="关闭提示">×</button></div>
+      </div>
+
+      <div v-if="mediaPreview" class="tg-media-screen" @click.self="closeMediaPreview">
+        <div class="tg-media-content" role="dialog" aria-label="查看聊天附件">
+          <div class="tg-media-header"><strong>{{ mediaPreview.name }}</strong><button @click="closeMediaPreview">×</button></div>
+          <img v-if="mediaPreview.mime.startsWith('image/')" :src="mediaPreview.url" :alt="mediaPreview.name" />
+          <audio v-else-if="mediaPreview.mime.startsWith('audio/')" controls :src="mediaPreview.url"></audio>
+          <video v-else-if="mediaPreview.mime.startsWith('video/')" controls :src="mediaPreview.url"></video>
+        </div>
       </div>
       <div v-if="forwardSource" class="tg-modal-screen" @click.self="forwardSource=null">
         <section class="tg-modal" role="dialog" aria-label="转发消息">
