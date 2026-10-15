@@ -81,11 +81,15 @@ func TestHTTPFallbackRejectsInvalidPayloads(t *testing.T){
   w:=authenticatedJSON(t,s,"POST","/api/messages/send",tok,tc.input)
   if w.Code!=tc.want{t.Errorf("payload %v: status %d expected %d",tc.input,w.Code,tc.want)}
  }
+ // Invalid attempts also count toward rate limiting, so use a fresh
+ // authenticated account to exercise exactly 25 accepted sends.
+ fresh:=testServer(t)
+ sender:=reg(t,fresh,"spammer")
  for n:=0;n<25;n++{
-  w:=authenticatedJSON(t,s,"POST","/api/messages/send",tok,map[string]string{"roomId":"lobby","text":"test"})
+  w:=authenticatedJSON(t,fresh,"POST","/api/messages/send",sender,map[string]string{"roomId":"lobby","text":"test"})
   if w.Code!=201{t.Fatalf("send %d failed %d",n,w.Code)}
  }
- limited:=authenticatedJSON(t,s,"POST","/api/messages/send",tok,map[string]string{"roomId":"lobby","text":"26"})
+ limited:=authenticatedJSON(t,fresh,"POST","/api/messages/send",sender,map[string]string{"roomId":"lobby","text":"26"})
  if limited.Code!=429{t.Fatalf("spam limit bypassed: %d",limited.Code)}
 }
 
