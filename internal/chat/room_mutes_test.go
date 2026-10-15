@@ -9,7 +9,7 @@ import (
 func TestRoomMuteAccountScopeAndDiskPersistence(t *testing.T){
  s:=testServer(t)
  alice:=reg(t,s,"alice")
- bob:=reg(t,s,"bob")
+ _=reg(t,s,"bob")
  carol:=reg(t,s,"carol")
  room,err:=s.store.CreateDirect("alice","bob")
  if err!=nil{t.Fatal(err)}
