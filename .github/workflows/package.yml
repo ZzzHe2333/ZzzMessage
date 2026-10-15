@@ -1,6 +1,9 @@
 name: Package (on request)
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'build-request/2026-10-15-rewards-and-gifts'
 permissions:
   contents: read
 jobs:
