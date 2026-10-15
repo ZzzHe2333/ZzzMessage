@@ -235,11 +235,16 @@ function connect() {
     else if (data.type === 'sync_chunk') {
       try {
         await keepMessages(server.value,me.value.username,data.messages)
-        if (data.messages.some(m=>m.roomId===selectedId.value)) {
-          const current=selectedId.value
-          const loaded=await loadMessages(server.value,me.value.username,current)
-          if (selectedId.value===current) { messages.value=loaded; await scrollBottom() }
+        const seen=new Set(messages.value.map(m=>m.id))
+        let added=false
+        for (const msg of data.messages) {
+          if (msg.roomId===selectedId.value && !seen.has(msg.id)) {
+            messages.value.push(msg)
+            seen.add(msg.id)
+            added=true
+          }
         }
+        if (added) await scrollBottom()
         if (generation===liveSession&&ws.readyState===WebSocket.OPEN) {
           ws.send(JSON.stringify({type:'sync_chunk_ack',requestId:data.requestId,
             deviceId:data.sourceDevice,seq:data.seq}))
@@ -290,6 +295,12 @@ function requestHistorySync() {
   syncBusy.value = true
   syncStatus.value = '正在请求在线设备同步历史…'
   socket.send(JSON.stringify({type:'sync_request'}))
+  setTimeout(() => {
+    if (syncBusy.value) {
+      syncBusy.value=false
+      syncStatus.value='历史同步等待过久，可点击重新同步。'
+    }
+  },30*60*1000)
 }
 async function serveHistorySync(ws,generation,request) {
   if (!request?.targetDevice || !request?.requestId || generation !== liveSession) return

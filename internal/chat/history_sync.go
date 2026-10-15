@@ -49,10 +49,10 @@ func (s *Server) startHistorySync(c *Client){
     id,err:=randomID()
     if err!=nil{return}
     s.syncMu.Lock()
-    // Prune expired in-memory forwarding permissions; bounded by 5 minutes.
+    // Prune expired in-memory forwarding permissions; bounded by 30 minutes.
     now:=time.Now()
     for id,v:=range s.historyRequests {
-        if now.Sub(v.Started)>5*time.Minute {delete(s.historyRequests,id)}
+        if now.Sub(v.Started)>30*time.Minute {delete(s.historyRequests,id)}
     }
     // One outstanding request for a device/account at a time.
     for id,v:=range s.historyRequests{
@@ -71,7 +71,7 @@ func (s *Server) permittedHistoryRequest(c *Client,requestID,target string,reque
     if !validDeviceID(requestID) || !validDeviceID(target){return false}
     s.syncMu.Lock();defer s.syncMu.Unlock()
     request,ok:=s.historyRequests[requestID]
-    if !ok||request.User!=c.username||request.TargetDevice!=target||time.Since(request.Started)>5*time.Minute{return false}
+    if !ok||request.User!=c.username||request.TargetDevice!=target||time.Since(request.Started)>30*time.Minute{return false}
     if requester{return c.deviceID==request.TargetDevice}
     return c.deviceID!=request.TargetDevice
 }
