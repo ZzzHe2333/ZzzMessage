@@ -40,17 +40,22 @@ func (s *Server) httpSend(w http.ResponseWriter,r *http.Request,user string){
     var data struct{
         RoomID string `json:"roomId"`
         Text string `json:"text"`
+        ReplyTo string `json:"replyTo"`
     }
     if !readJSON(w,r,&data){return}
     if data.Text==""||!utf8.ValidString(data.Text)||utf8.RuneCountInString(data.Text)>4000{
         apiError(w,400,"消息长度需为1-4000字")
         return
     }
+    if data.ReplyTo!="" && !validDeviceID(data.ReplyTo) {
+        apiError(w,400,"回复消息编号无效")
+        return
+    }
     if s.limitSend(user) {
         apiError(w,429,"发送太频繁")
         return
     }
-    room,message,err:=s.store.QueueMessage(data.RoomID,user,data.Text)
+    room,message,err:=s.store.QueueReplyMessage(data.RoomID,user,data.Text,data.ReplyTo)
     if err!=nil {
         if err==ErrInvalid||err==ErrNotFound {
             apiError(w,403,"无法向该会话发送消息")

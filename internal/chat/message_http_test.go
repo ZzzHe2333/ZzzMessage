@@ -112,3 +112,32 @@ func TestPushPreviewDefaultOptOutAndRoomScope(t *testing.T){
  unauthorized:=authenticatedJSON(t,s,"GET","/api/push/preferences","",nil)
  if unauthorized.Code!=401{t.Fatal("push preferences leaked")}
 }
+
+func TestReplyMetadataIsPersistedAndScopedToRoom(t *testing.T){
+ s:=testServer(t)
+ alice:=reg(t,s,"alice")
+ bob:=reg(t,s,"bob")
+ room,err:=s.store.CreateDirect("alice","bob")
+ if err!=nil{t.Fatal(err)}
+ first:=authenticatedJSON(t,s,"POST","/api/messages/send",alice,
+   map[string]string{"roomId":room.ID,"text":"第一条"})
+ if first.Code!=201{t.Fatal(first.Body.String())}
+ var original ChatMessage
+ if err:=json.Unmarshal(first.Body.Bytes(),&original);err!=nil{t.Fatal(err)}
+ answer:=authenticatedJSON(t,s,"POST","/api/messages/send",bob,
+   map[string]string{"roomId":room.ID,"text":"回复内容","replyTo":original.ID})
+ if answer.Code!=201{t.Fatal(answer.Code,answer.Body.String())}
+ var replied ChatMessage
+ if err:=json.Unmarshal(answer.Body.Bytes(),&replied);err!=nil{t.Fatal(err)}
+ if replied.ReplyTo!=original.ID{t.Fatal("reply linkage omitted",replied)}
+ persisted,err:=NewStore(filepath.Dir(s.store.path))
+ if err!=nil{t.Fatal(err)}
+ found:=false
+ for _,m:=range persisted.PendingFor("alice"){
+   if m.ID==replied.ID && m.ReplyTo==original.ID{found=true}
+ }
+ if !found{t.Fatal("reply link not persisted")}
+ bad:=authenticatedJSON(t,s,"POST","/api/messages/send",bob,
+   map[string]string{"roomId":room.ID,"text":"invalid","replyTo":"../../unknown"})
+ if bad.Code!=400{t.Fatal("untrusted reply id accepted",bad.Code)}
+}

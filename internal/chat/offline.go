@@ -17,18 +17,25 @@ type ChatMessage struct {
   Text string `json:"text"`
   CreatedAt string `json:"createdAt"`
   Attachment *Attachment `json:"attachment,omitempty"`
+  ReplyTo string `json:"replyTo,omitempty"`
 }
 func (s *Store) QueueMessage(roomID,sender,text string)(Room,ChatMessage,error){
- return s.QueueAttachmentMessage(roomID,sender,text,nil)
+ return s.queueMessage(roomID,sender,text,nil,"")
+}
+func (s *Store) QueueReplyMessage(roomID,sender,text,replyTo string)(Room,ChatMessage,error){
+ return s.queueMessage(roomID,sender,text,nil,replyTo)
 }
 func (s *Store) QueueAttachmentMessage(roomID,sender,text string,attachment *Attachment)(Room,ChatMessage,error){
+ return s.queueMessage(roomID,sender,text,attachment,"")
+}
+func (s *Store) queueMessage(roomID,sender,text string,attachment *Attachment,replyTo string)(Room,ChatMessage,error){
  s.mu.Lock();defer s.mu.Unlock()
  room,ok:=s.state.Rooms[roomID]
  if !ok||!member(room,sender){return Room{},ChatMessage{},ErrInvalid}
  if _,ok:=s.state.Users[sender];!ok{return Room{},ChatMessage{},ErrNotFound}
  id,err:=randomID();if err!=nil{return Room{},ChatMessage{},err}
  now:=time.Now().UTC()
- msg:=ChatMessage{Type:"message",ID:id,RoomID:roomID,Sender:sender,Text:text,CreatedAt:now.Format(time.RFC3339Nano),Attachment:attachment}
+ msg:=ChatMessage{Type:"message",ID:id,RoomID:roomID,Sender:sender,Text:text,CreatedAt:now.Format(time.RFC3339Nano),Attachment:attachment,ReplyTo:replyTo}
  recipients:=room.Members
  if room.Type=="lobby"{
   recipients=make([]string,0,len(s.state.Users))
