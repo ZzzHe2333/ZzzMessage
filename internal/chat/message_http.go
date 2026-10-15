@@ -15,7 +15,9 @@ func (s *Server) httpPending(w http.ResponseWriter, _ *http.Request, user string
     all:=s.store.PendingFor(user)
     if len(all)>100 {all=all[:100]}
     result:=append([]ChatMessage{},all...)
-    writeJSON(w,http.StatusOK,map[string]any{"messages":result})
+    // Returning current room membership with pending messages lets a disconnected
+    // client discover newly-created groups even when WebSocket Upgrade fails.
+    writeJSON(w,http.StatusOK,map[string]any{"messages":result,"rooms":s.store.RoomsFor(user)})
 }
 
 func (s *Server) limitSend(user string)bool{

@@ -150,3 +150,29 @@ func TestPushProviderRejectReasonFiltered(t *testing.T){
     if got:=pushProviderReason(strings.NewReader(payload));got!=""{t.Fatalf("unsafe provider reason: %q",got)}
   }
 }
+
+func TestPushEndpointCrossBrowserProviders(t *testing.T) {
+  allowed:=[]string{
+    "https://web.push.apple.com/QaBcd",
+    "https://fcm.googleapis.com/fcm/send/abcdef123",
+    "https://updates.push.services.mozilla.com/wpush/v2/abcdef",
+    "https://wns2-pn2p.notify.windows.com/?token=encoded",
+  }
+  for _,endpoint:=range allowed {
+    if !validPushSubscription(validTestPushSubscription(t,endpoint)) {
+      t.Errorf("valid cross-platform Web Push endpoint was rejected: %s",endpoint)
+    }
+  }
+  rejected:=[]string{
+    "https://evil.notify.windows.com.attacker.org/path",
+    "https://127.0.0.1/device",
+    "https://fcm.googleapis.com:8443/fcm/send/test",
+    "http://wns2-pn2p.notify.windows.com/test",
+    "https://evil.push.services.mozilla.com.attacker.org/wpush",
+  }
+  for _,endpoint:=range rejected {
+    if validPushSubscription(validTestPushSubscription(t,endpoint)) {
+      t.Errorf("untrusted Web Push endpoint accepted: %s",endpoint)
+    }
+  }
+}

@@ -27,6 +27,9 @@ func validPushSubscription(v webpush.Subscription) bool {
   host := strings.ToLower(u.Hostname())
   allowed := host == "fcm.googleapis.com" ||
     host == "updates.push.services.mozilla.com" ||
+    strings.HasSuffix(host, ".push.services.mozilla.com") ||
+    host == "notify.windows.com" ||
+    strings.HasSuffix(host, ".notify.windows.com") ||
     host == "web.push.apple.com" ||
     strings.HasSuffix(host, ".push.apple.com")
   if !allowed { return false }
