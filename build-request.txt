@@ -1,0 +1,1 @@
+Explicit user-requested cross-platform release build on 2026-10-15. No automatic main branch packaging.
