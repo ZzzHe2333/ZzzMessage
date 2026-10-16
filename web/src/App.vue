@@ -31,6 +31,15 @@ const busy = ref(false)
 const tab = ref('chats')
 const groupName = ref('')
 const chatSearch = ref('')
+const mobileFilter = ref('all')
+const mobileFilterOptions = [
+  {value:'all',label:'全部'},
+  {value:'unread',label:'未读'},
+  {value:'groups',label:'群组'}
+]
+const mobileBuildVersion = '2026.10.16-mobile.1'
+const mobileUpdateStatus = ref('')
+
 const allLocalMessages = ref([])
 const chatPrefs = ref({})
 const replyTo = ref(null)
@@ -103,7 +112,11 @@ const roomLabel = r => {
 }
 const roomAvatar = r => (r?.type === 'direct' ? roomLabel(r).slice(0,1) : r?.type === 'group' ? '👥' : '💬')
 const roomSummaries = computed(() => conversationSummaries(allLocalMessages.value,me.value?.username||'',chatPrefs.value))
-const filteredRooms = computed(() => sortConversations(rooms.value,roomSummaries.value,chatPrefs.value,chatSearch.value,roomLabel))
+const filteredRooms = computed(() => sortConversations(
+  rooms.value.filter(r => mobileFilter.value==='groups' ? r.type==='group' :
+    mobileFilter.value==='unread' ? (roomSummaries.value[r.id]?.unread||0)>0 : true),
+  roomSummaries.value,chatPrefs.value,chatSearch.value,roomLabel
+))
 const searchedMessages = computed(() => searchLocalMessages(
   allLocalMessages.value,chatSearch.value,rooms.value.map(r=>r.id),25))
 const inRoomSearch = computed(() => searchLocalMessages(
@@ -130,6 +143,24 @@ const displayTitle = computed(() => activeRoom.value ? roomLabel(activeRoom.valu
 watch([displayTitle, routePath], () => {
   document.title = routePath.value === '/message' ? displayTitle.value : 'ZzzMessage · ' + routePath.value.slice(1)
 }, { immediate:true })
+async function checkMobileUpdate() {
+  mobileUpdateStatus.value='正在检查前端更新…'
+  try {
+    if (!('serviceWorker' in navigator)) {
+      mobileUpdateStatus.value='当前浏览器未使用 PWA 更新服务。请直接刷新网页。'
+      return
+    }
+    const registration=await navigator.serviceWorker.getRegistration()
+    if (!registration) {
+      mobileUpdateStatus.value='尚未安装 PWA 缓存，刷新网页即可获取新页面。'
+      return
+    }
+    await registration.update()
+    mobileUpdateStatus.value='已检查更新。如发现新版本将自动切换并刷新页面；服务器仍须部署新 web 文件。'
+  } catch(error) {
+    mobileUpdateStatus.value='检查更新失败：'+(error?.message||error)
+  }
+}
 function goMenu(target) {
   menuOpen.value=false
   if (target==='/friend') void refresh()
@@ -1195,6 +1226,11 @@ onBeforeUnmount(() => {
     <section v-else class="app card" :class="{ 'mobile-chat': mobileChat, 'info-open': infoOpen && routePath === '/message' }">
       <aside class="sidebar">
         <header class="sidebar-head tg-sidebar-head">
+          <div class="tg-mobile-heading">
+            <span class="tg-mobile-brand">Z</span>
+            <div><strong>聊天</strong><small>ZzzMessage · 私人服务器</small></div>
+            <button type="button" class="tg-mobile-heading-action" title="新建群聊" @click="openNewGroup">✎</button>
+          </div>
           <div class="tg-search-row">
             <button class="tg-round-btn" type="button" aria-label="打开菜单" @click="menuOpen=!menuOpen">☰</button>
             <label class="tg-search"><span aria-hidden="true">⌕</span><input v-model="chatSearch" type="search" placeholder="搜索聊天和联系人" aria-label="搜索聊天和联系人" /></label>
@@ -1206,17 +1242,29 @@ onBeforeUnmount(() => {
             <button @click="goMenu('/gift')">🎁　礼物商店</button>
             <button @click="goMenu('/money')">🪙　我的钱包</button>
             <button @click="goMenu('/setting')">⚙　设置</button>
-            <div class="tg-menu-foot">{{ me.displayName }} · @{{ me.username }}</div>
+            <button @click="checkMobileUpdate();menuOpen=false">⟳　检查更新</button>
+            <div class="tg-menu-foot">{{ me.displayName }} · @{{ me.username }} · UI {{ mobileBuildVersion }}</div>
           </div>
         </header>
         <div class="tg-sidebar-title">
           <strong>{{ routePath === '/friend' ? '联系人' : routePath === '/setting' ? '设置' : newGroup ? '新建群聊' : '全部聊天' }}</strong>
           <button v-if="!newGroup && !showSettings" class="tg-round-btn" title="新建群聊" @click="openNewGroup">＋</button>
         </div>
+        <div v-if="!showSettings && !newGroup && tab==='chats'" class="tg-mobile-filters" role="group" aria-label="过滤聊天列表">
+          <button v-for="option in mobileFilterOptions" :key="option.value" type="button"
+            :class="{ selected:mobileFilter===option.value }"
+            @click="mobileFilter=option.value">{{ option.label }}</button>
+        </div>
         <div v-if="showSettings" class="sidebar-body">
           <h3>设置</h3>
           <p class="muted">账号：{{ me.displayName }} (@{{ me.username }})</p>
           <p class="muted">后端：{{ server }}</p>
+          <div class="tg-update-panel">
+            <strong>手机版界面版本：{{ mobileBuildVersion }}</strong>
+            <p class="hint">检查更新不会清空聊天记录，也不会取消系统通知订阅。</p>
+            <button class="secondary" @click="checkMobileUpdate">检查前端更新</button>
+            <p v-if="mobileUpdateStatus" class="hint" role="status">{{ mobileUpdateStatus }}</p>
+          </div>
           <h3>多设备本地历史同步</h3>
           <p class="hint">需要另一台存有聊天记录的同账号设备在线；历史只在设备之间中转，不长期保存在服务器。</p>
           <p class="hint" role="status">{{ syncStatus }}</p>
@@ -1289,7 +1337,18 @@ onBeforeUnmount(() => {
           </div>
           <p v-if="chatSearch.trim() && !filteredRooms.length && !searchedMessages.length" class="empty-note">本机没有匹配的会话或消息</p>
         </div>
-        <footer class="sidebar-foot"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : apiConnected ? 'HTTP 消息同步正常（WebSocket 未连接）' : '正在连接服务器' }}</footer>
+        <footer class="sidebar-foot tg-server-status"><span :class="['dot', connection]"></span>{{ connection === 'online' ? '实时连接正常' : apiConnected ? 'HTTP 消息同步正常（WebSocket 未连接）' : '正在连接服务器' }} <small class="tg-build-label">UI {{ mobileBuildVersion }}</small></footer>
+        <nav v-if="!newGroup" class="tg-mobile-bottom-nav" aria-label="手机版导航">
+          <button type="button" :class="{selected:tab==='chats'&&!showSettings}" @click="goMenu('/message');mobileChat=false">
+            <span class="tg-mobile-nav-icon">▤</span><span>聊天</span>
+          </button>
+          <button type="button" :class="{selected:tab==='people'&&!showSettings}" @click="goMenu('/friend')">
+            <span class="tg-mobile-nav-icon">♧</span><span>联系人</span>
+          </button>
+          <button type="button" :class="{selected:showSettings}" @click="goMenu('/setting')">
+            <span class="tg-mobile-nav-icon">⚙</span><span>设置</span>
+          </button>
+        </nav>
       </aside>
       <section v-if="routePath === '/money'" class="economy-pane">
         <header class="economy-header">
@@ -1345,7 +1404,7 @@ onBeforeUnmount(() => {
       <div v-else class="chat-pane" :class="{ 'tg-drag-active':dragOverChat }"
         @dragover.prevent="dragOverChat=true" @dragleave.self="dragOverChat=false" @drop.prevent="handleFileDrop">
         <header class="chat-head tg-chat-head">
-          <button class="mobile-back tg-back" type="button" aria-label="返回会话" @click="mobileChat=false">‹</button>
+          <button class="mobile-back tg-back" type="button" aria-label="返回聊天列表" @click="mobileChat=false;infoOpen=false;messageActions=''">‹</button>
           <button class="tg-peer" type="button" @click="infoOpen=!infoOpen" title="查看会话资料">
             <span class="avatar tg-peer-avatar" :class="{ group: activeRoom?.type !== 'direct' }">{{ activeRoom ? roomAvatar(activeRoom) : 'Z' }}</span>
             <span class="tg-peer-details"><strong>{{ activeRoom ? roomLabel(activeRoom) : '选择聊天' }}</strong><small>{{ activeRoom ? activeSubtitle : '欢迎使用 ZzzMessage' }}</small></span>
@@ -1407,6 +1466,7 @@ onBeforeUnmount(() => {
           </template>
         </div>
         <div class="tg-composer-area">
+          <p class="tg-mobile-input-tip" v-if="connection!=='online'&&apiConnected">HTTPS 消息同步运行中</p>
           <div v-if="replyTo" class="tg-reply-composer">
             <span><strong>正在回复 {{ replyTo.sender }}</strong><small>{{ replyTo.text?.slice(0,110)||replyTo.attachment?.name }}</small></span>
             <button type="button" aria-label="取消回复" @click="replyTo=null">×</button>
