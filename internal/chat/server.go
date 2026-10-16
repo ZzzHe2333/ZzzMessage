@@ -48,6 +48,7 @@ type Server struct {
     externalKeyHash [32]byte
     externalSender string
     externalRecipients map[string]bool
+    adminUpdater *AdminUpdater
 }
 
 func NewServer(c Config) (*Server, error) {
@@ -149,6 +150,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/register", s.register)
 	mux.HandleFunc("POST /api/auth/login", s.login)
 	mux.HandleFunc("GET /api/me", s.auth(s.me))
+    mux.HandleFunc("GET /api/admin/me",s.auth(s.adminMe))
+    mux.HandleFunc("GET /api/admin/status",s.auth(s.adminStatus))
+    mux.HandleFunc("GET /api/admin/releases",s.auth(s.adminReleases))
+    mux.HandleFunc("POST /api/admin/update",s.auth(s.adminApply))
 	mux.HandleFunc("GET /api/users", s.auth(s.users))
 	mux.HandleFunc("GET /api/rooms", s.auth(s.rooms))
     mux.HandleFunc("GET /api/rooms/mutes",s.auth(s.getRoomMutes))

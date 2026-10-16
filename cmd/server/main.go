@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+    "context"
 	"bufio"
 	"errors"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"github.com/ZzzHe2333/ZzzMessage/internal/chat"
 )
 
+var buildVersion = "dev"
+var buildTime = ""
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -45,6 +48,17 @@ func main() {
 		XiaomiSecret: os.Getenv("XIAOMI_APP_SECRET"), XiaomiPackage: os.Getenv("XIAOMI_PACKAGE_NAME"),
 		VivoAppID: os.Getenv("VIVO_APP_ID"), VivoAppKey: os.Getenv("VIVO_APP_KEY"), VivoAppSecret: os.Getenv("VIVO_APP_SECRET"),
 	}); err != nil { log.Fatal(err) }
+    administrator:=strings.TrimSpace(os.Getenv("ADMIN_USERNAME"))
+    if administrator!=""{
+        if _,ok:=store.GetUser(administrator);!ok{
+            log.Fatal("ADMIN_USERNAME must be an existing registered account; register the administrator first, then enable it in .env")
+        }
+        installDir,err:=os.Getwd()
+        if err!=nil{log.Fatal(err)}
+        updater,err:=chat.NewAdminUpdater(administrator,installDir,env("DATA_DIR","./data"),buildVersion,buildTime)
+        if err!=nil{log.Fatal(err)}
+        app.SetAdminUpdater(updater)
+    }
 	addr := env("LISTEN_ADDR", ":58463")
 	handler := app.Handler()
 	if webDir := env("WEB_DIR", ""); webDir != "" {
@@ -52,9 +66,14 @@ func main() {
 		handler = withStaticSite(handler, webDir)
 		log.Printf("ZzzMessage static frontend: %s", webDir)
 	}
-	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
+    server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 90 * time.Second}
+    app.SetAdminShutdown(func(){
+        shutdownCtx,cancel:=context.WithTimeout(context.Background(),8*time.Second)
+        defer cancel()
+        _=server.Shutdown(shutdownCtx)
+    })
 	log.Printf("ZzzMessage API listening on %s; server persists pending messages until ACK (14 days / 500 per account)", addr)
-	log.Fatal(server.ListenAndServe())
+    if err:=server.ListenAndServe();err!=nil&&err!=http.ErrServerClosed{log.Fatal(err)}
 }
 
 

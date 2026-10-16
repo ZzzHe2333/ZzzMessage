@@ -38,9 +38,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p packages stage/ZzzMessage-windows-amd64/web stage/ZzzMessage-linux-amd64/web stage/ZzzMessage-linux-arm64/web
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-windows-amd64/ZzzMessage.exe ./cmd/server
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-amd64/zzzmessage ./cmd/server
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-arm64/zzzmessage ./cmd/server
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.buildVersion=${GITHUB_SHA::12} -X main.buildTime=$BUILD_TIME" -o stage/ZzzMessage-windows-amd64/ZzzMessage.exe ./cmd/server
+                    CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-windows-amd64/ZzzMessage-Updater.exe ./cmd/zzzmessage-updater
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w -X main.buildVersion=${GITHUB_SHA::12} -X main.buildTime=$BUILD_TIME" -o stage/ZzzMessage-linux-amd64/zzzmessage ./cmd/server
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.buildVersion=${GITHUB_SHA::12} -X main.buildTime=$BUILD_TIME" -o stage/ZzzMessage-linux-arm64/zzzmessage ./cmd/server
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-windows-amd64/ZzzMessage-MCP.exe ./cmd/zzzmessage-mcp
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-amd64/zzzmessage-mcp ./cmd/zzzmessage-mcp
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-arm64/zzzmessage-mcp ./cmd/zzzmessage-mcp
