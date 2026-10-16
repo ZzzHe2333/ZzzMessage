@@ -76,7 +76,7 @@ func TestManagedAPIKeysValidationLimitExpiryAndLegacyCoexistence(t *testing.T){
   var firstID string
   for n:=0;n<maxAPIKeysPerAccount;n++{
     created:=authenticatedJSON(t,s,"POST","/api/keys",alice,map[string]any{
-      "label":"bot "+string(rune('a'+n)),"recipients":[]string{"bob"},"validDays":30
+      "label":"bot "+string(rune('a'+n)),"recipients":[]string{"bob"},"validDays":30,
     })
     if created.Code!=201{t.Fatal("limit create",n,created.Code,created.Body.String())}
     if n==0 {
