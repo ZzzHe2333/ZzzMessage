@@ -703,3 +703,12 @@
   .api-key-record>.danger{padding:9px}
   .api-key-form .primary{width:100%}
 }
+
+
+/* Server administrator dashboard */
+.tg-admin-result{margin-top:15px;padding:14px;background:#edf6ff;border-radius:10px;border-left:4px solid #3a8dd4}
+.tg-admin-result strong{font-size:14px;color:#2d5d8f}
+.tg-admin-result p{margin:7px 0 0;color:#56718e}
+.tg-admin-select,.tg-admin-confirm{width:100%;margin:9px 0 13px;min-height:44px;border-radius:10px;border:1px solid #d4e1ed;background:#fff;padding:10px 12px}
+.tg-admin-apply{display:block;margin-top:11px;max-width:100%;white-space:normal}
+@media(max-width:680px){.tg-admin-apply{width:100%}}
