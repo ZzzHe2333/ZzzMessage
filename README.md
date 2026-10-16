@@ -171,3 +171,7 @@ Windows Edge 推送订阅现允许经安全 HTTPS 的 Microsoft WNS `*.notify.wi
 手机端已增加专用 Telegram 风格布局、底部导航与 PWA 版本更新检查；更新服务器 web/ 后在手机版设置页核对 UI 2026.10.16-mobile.1。详情见 [移动端部署与缓存更新说明](docs/TG_UI_FILES.md)。
 
 新增个人 API Key 管理页 `/api-key`，登录用户可直接生成并撤销独立免登录消息发送 Key，配置允许发送的收件人。详见 [外部发送接口说明](docs/EXTERNAL_API.md)。
+
+## MCP：AI 使用 ZzzMessage 账号登录发消息
+
+新增独立 stdio MCP 程序 `zzzmessage-mcp`（Windows 构建为 `ZzzMessage-MCP.exe`），可供 Hermes 等 AI 客户端使用专用账号密码登录，以该账号身份列出联系人并向指定用户发送私聊。账号密码只通过 MCP 进程本地环境传入，AI 工具不接收密码。建议限制收件人并开启发送前审批。Windows/Linux 发行包包含 MCP 可执行文件与 [安装说明](docs/MCP.md)。

@@ -89,3 +89,8 @@ Windows Edge Web Push WNS 地址 `*.notify.windows.com` 已列入允许域名；
 ## 个人 API 发送 Key 页面
 
 新版登录后可从菜单或设置进入 /api-key，管理自己的免登录发消息 Key：创建、列出、撤销，以及选择可发送的注册用户和30/90/365天有效期。管理走登录 Session，真正发消息仍调用 /api/external/send 并用个人 Key。服务端只保存哈希，Key 仅生成时显示一次，每用户最多5个；原有环境变量 EXTERNAL_SEND_KEY 仍兼容。打包部署要同时替换 EXE 与整个 web 目录，并保留 .env 和 data/state.json。详见 docs/EXTERNAL_API.md。
+
+
+## MCP 账号登录代理发消息（开发版）
+
+新增 `cmd/zzzmessage-mcp`，提供 stdio MCP 工具 `zzzmessage_list_users` 和 `zzzmessage_send_private_message`。使用独立 AI 账号通过 /api/auth/login 取得会话令牌，/api/direct 复用私聊，/api/messages/send 投递文字。Windows/Linux x64/ARM64 打包将包含 MCP 二进制，使用 ZZZMESSAGE_URL/USERNAME/PASSWORD 本地环境配置并支持收件人白名单，不需 EXTERNAL_SEND_KEY。设置的 /api-key 页面增加 MCP 配置说明。详见 [MCP.md](MCP.md)。

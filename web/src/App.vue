@@ -1323,7 +1323,7 @@ onBeforeUnmount(() => {
             <button @click="goMenu('/gift')">🎁　礼物商店</button>
             <button @click="goMenu('/money')">🪙　我的钱包</button>
             <button @click="goMenu('/setting')">⚙　设置</button>
-            <button @click="goMenu('/api-key')">⌁　API Key 管理</button>
+            <button @click="goMenu('/api-key')">⌁　API Key / MCP</button>
             <button @click="checkMobileUpdate();menuOpen=false">⟳　检查更新</button>
             <div class="tg-menu-foot">{{ me.displayName }} · @{{ me.username }} · UI {{ mobileBuildVersion }}</div>
           </div>
@@ -1500,6 +1500,18 @@ onBeforeUnmount(() => {
               </div>
               <button type="button" class="danger" :disabled="keyBusy" @click="revokeAPIKey(entry)">撤销</button>
             </article>
+          </section>
+          <section class="api-key-block">
+            <h3>AI / MCP · 使用登录账号代理发消息</h3>
+            <p>这是另一种接入方式：Hermes 等 AI 客户端在自己的电脑或小主机上运行 <code>zzzmessage-mcp</code>，用专门注册的账号登录，然后以该账号身份发送消息。</p>
+            <div class="api-key-mcp-steps">
+              <p><strong>①</strong> 在 ZzzMessage 注册独立 AI 账号，例如 <code>hermes_bot</code>。</p>
+              <p><strong>②</strong> 下载 Windows/Linux 包中的 <code>ZzzMessage-MCP.exe</code> 或 <code>zzzmessage-mcp</code>。</p>
+              <p><strong>③</strong> 在 AI 客户端的 MCP stdio 配置里设置如下环境变量（密码只填写在本机配置，不要发送给 AI）：</p>
+              <pre class="api-key-code">{{ 'ZZZMESSAGE_URL=' + server + '\nZZZMESSAGE_USERNAME=hermes_bot\nZZZMESSAGE_PASSWORD=填写机器人账号密码\nZZZMESSAGE_MCP_ALLOWED_RECIPIENTS=' + me.username }}</pre>
+              <p><strong>④</strong> 让 AI 调用 <code>zzzmessage_list_users</code> 和 <code>zzzmessage_send_private_message</code>。发送消息前建议开启人工确认。</p>
+            </div>
+            <p class="hint">MCP 账号登录与上方 API Key 方案是独立的。MCP 程序不会在网页里保存账号密码，也不需要给 AI 提供密码参数。</p>
           </section>
           <section class="api-key-block">
             <h3>如何调用</h3>
