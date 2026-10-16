@@ -53,19 +53,31 @@ func (s *Server) ConfigureExternalSend(cfg ExternalSendConfig) error {
 }
 
 func (s *Server) externalSend(w http.ResponseWriter, r *http.Request) {
-    if !s.externalEnabled { http.NotFound(w, r); return }
-    const prefix = "Bearer "
-    value := r.Header.Get("Authorization")
-    if !strings.HasPrefix(value,prefix) || len(value) > len(prefix)+512 {
-        w.Header().Set("WWW-Authenticate", "Bearer")
+    if !s.externalEnabled && !s.store.HasAPIKeys(){http.NotFound(w,r);return}
+    const prefix="Bearer "
+    authorization:=r.Header.Get("Authorization")
+    if !strings.HasPrefix(authorization,prefix)||len(authorization)>len(prefix)+512{
+        w.Header().Set("WWW-Authenticate","Bearer")
         apiError(w,http.StatusUnauthorized,"无效的 API Key")
         return
     }
-    supplied := strings.TrimPrefix(value,prefix)
-    digest := sha256.Sum256([]byte(supplied))
-    if subtle.ConstantTimeCompare(digest[:],s.externalKeyHash[:]) != 1 {
-        w.Header().Set("WWW-Authenticate", "Bearer")
-        apiError(w,http.StatusUnauthorized,"无效的 API Key")
+    supplied:=strings.TrimPrefix(authorization,prefix)
+    sender:=""
+    allowed:=map[string]bool{}
+    managed,ok:=s.store.ResolveAPIKey(supplied)
+    if ok {
+        sender=managed.Owner
+        for _,name:=range managed.Recipients {allowed[name]=true}
+    } else if s.externalEnabled {
+        digest:=sha256.Sum256([]byte(supplied))
+        if subtle.ConstantTimeCompare(digest[:],s.externalKeyHash[:])==1 {
+            sender=s.externalSender
+            allowed=s.externalRecipients
+        }
+    }
+    if sender=="" {
+        w.Header().Set("WWW-Authenticate","Bearer")
+        apiError(w,http.StatusUnauthorized,"API Key 无效、已撤销或已过期")
         return
     }
     var req struct {
@@ -74,10 +86,10 @@ func (s *Server) externalSend(w http.ResponseWriter, r *http.Request) {
     }
     if !readJSON(w,r,&req) {return}
     recipient := strings.ToLower(strings.TrimSpace(req.Recipient))
-    if !validUsername(recipient) || recipient==s.externalSender {
+    if !validUsername(recipient) || recipient==sender {
         apiError(w,400,"收件人无效或不能给机器人自己发送");return
     }
-    if len(s.externalRecipients)>0 && !s.externalRecipients[recipient] {
+    if !allowed[recipient] && !( !ok && s.externalEnabled && sender==s.externalSender && len(s.externalRecipients)==0 ) {
         apiError(w,403,"该 API Key 无权向此用户发送");return
     }
     if _,ok:=s.store.GetUser(recipient);!ok {
@@ -87,14 +99,14 @@ func (s *Server) externalSend(w http.ResponseWriter, r *http.Request) {
         apiError(w,400,"消息长度需为1-4000字");return
     }
     // API clients cannot bypass the existing server-side send frequency cap.
-    if s.limitSend("external:"+s.externalSender) {apiError(w,429,"发送太频繁");return}
-    room,err:=s.store.CreateDirect(s.externalSender,recipient)
+    if s.limitSend("external:"+sender) {apiError(w,429,"发送太频繁");return}
+    room,err:=s.store.CreateDirect(sender,recipient)
     if err!=nil {
         log.Printf("external send room creation failed: %v",err)
         apiError(w,500,"创建私聊失败");return
     }
     s.notifyRoomChanged(room)
-    stored,msg,err:=s.store.QueueMessage(room.ID,s.externalSender,req.Text)
+    stored,msg,err:=s.store.QueueMessage(room.ID,sender,req.Text)
     if err!=nil {
         log.Printf("external message persistence failed: %v",err)
         apiError(w,500,"保存消息失败");return
@@ -102,6 +114,6 @@ func (s *Server) externalSend(w http.ResponseWriter, r *http.Request) {
     bytes,err:=json.Marshal(msg)
     if err==nil{s.hub.broadcast(stored,bytes)}
     s.queuePush(stored,msg)
-    s.queueNativePush(stored,s.externalSender)
+    s.queueNativePush(stored,sender)
     writeJSON(w,201,map[string]any{"ok":true,"messageId":msg.ID,"roomId":msg.RoomID,"recipient":recipient,"createdAt":msg.CreatedAt})
 }
