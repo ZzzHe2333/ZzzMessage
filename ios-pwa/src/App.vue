@@ -4,7 +4,7 @@ import { keepMessage, keepMessages, loadMessages, loadAllMessages, clearRoom, de
 import { scopeKey, conversationSummaries, sortConversations, searchLocalMessages, previewOf, summarizeReactions } from './chatUiState'
 
 const SERVER_KEY = 'zzzmessage.server'
-const ROUTES = new Set(['/login','/setting','/message','/friend','/gift','/money','/api-key'])
+const ROUTES = new Set(['/login','/setting','/message','/friend','/gift','/money','/api-key','/admin'])
 const initialPath = ROUTES.has(location.pathname) ? location.pathname : '/login'
 const routePath = ref(initialPath)
 const server = ref(localStorage.getItem(SERVER_KEY) || location.origin)
@@ -64,6 +64,55 @@ const recentEmoji = ['😀','😁','😂','🥰','😍','😘','😎','😭','�
 const groupMembers = ref([])
 const newGroup = ref(false)
 const showSettings = ref(false)
+const isAdministrator = ref(false)
+const adminStatus = ref(null)
+const adminReleases = ref([])
+const adminSelectedRelease = ref('')
+const adminConfirm = ref('')
+const adminBusy = ref(false)
+const adminNotice = ref('')
+const adminError = ref('')
+async function loadAdminIdentity(){
+  if(!me.value){isAdministrator.value=false;return}
+  try{
+    const info=await request('/api/admin/me')
+    isAdministrator.value=!!info.admin
+  }catch{isAdministrator.value=false}
+}
+async function refreshAdmin(){
+  if(!isAdministrator.value)return
+  adminError.value=''
+  adminBusy.value=true
+  try{
+    const [status,versions]=await Promise.all([
+      request('/api/admin/status'),request('/api/admin/releases')
+    ])
+    adminStatus.value=status
+    adminReleases.value=Array.isArray(versions.releases)?versions.releases:[]
+  }catch(err){adminError.value=err?.message||String(err)}
+  finally{adminBusy.value=false}
+}
+async function applyAdminUpdate(){
+  if(!isAdministrator.value||adminBusy.value)return
+  const release=adminReleases.value.find(x=>x.tag===adminSelectedRelease.value)
+  if(!release)return
+  if(adminConfirm.value!=='UPDATE '+release.tag){
+    adminError.value='请输入完整确认短语 UPDATE '+release.tag
+    return
+  }
+  if(!window.confirm('将暂时中断所有聊天连接并重启 Windows 服务端。确认更新到 '+release.tag+' 吗？'))return
+  adminBusy.value=true;adminError.value='';adminNotice.value=''
+  try{
+    const reply=await request('/api/admin/update',{
+      method:'POST',
+      body:JSON.stringify({tag:release.tag,confirmation:adminConfirm.value})
+    })
+    adminNotice.value=reply.message+'。约 30 秒后可以重新打开后台检查结果。'
+    adminConfirm.value=''
+  }catch(err){adminError.value=err?.message||String(err)}
+  finally{adminBusy.value=false}
+}
+
 const apiKeys = ref([])
 const keyLabel = ref('')
 const keyRecipients = ref([])
@@ -240,6 +289,7 @@ async function checkMobileUpdate() {
 }
 function goMenu(target) {
   menuOpen.value=false
+  if (target==='/admin' && !isAdministrator.value)return
   if (target==='/friend') void refresh()
   navigate(target)
 }
@@ -511,7 +561,8 @@ function syncRoute(next) {
   routePath.value = next
   if (next === '/gift') void openGiftShop()
   if (next === '/money') void refreshWallet()
-  if (next === '/gift' || next === '/money' || next === '/api-key') mobileChat.value = true
+  if (next === '/gift' || next === '/money' || next === '/api-key' || next === '/admin') mobileChat.value = true
+  if (next === '/admin' && me.value) void refreshAdmin()
   if (next === '/setting') mobileChat.value = false
   if(next==='/api-key' && me.value) void refreshAPIKeys()
   if(next!=='/api-key') dismissNewAPIKey()
@@ -523,6 +574,7 @@ function syncRoute(next) {
 function navigate(path, replace = false) {
   if (!ROUTES.has(path)) path = '/login'
   if (path !== '/login' && !me.value) path = '/login'
+  if (path === '/admin' && !isAdministrator.value) path = '/message'
   if (location.pathname !== path) {
     history[replace ? 'replaceState' : 'pushState']({}, '', path)
   }
@@ -643,6 +695,7 @@ async function initialize() {
   await rebuildHistoryIndex()
   await refresh()
   await refreshServerMutes()
+  await loadAdminIdentity()
   if (!rooms.value.some(r => r.id === selectedId.value)) selectedId.value = 'lobby'
   await selectRoom(selectedId.value)
   mobileChat.value = false
@@ -1324,6 +1377,7 @@ onBeforeUnmount(() => {
             <button @click="goMenu('/money')">🪙　我的钱包</button>
             <button @click="goMenu('/setting')">⚙　设置</button>
             <button @click="goMenu('/api-key')">⌁　API Key / MCP</button>
+            <button v-if="isAdministrator" @click="goMenu('/admin')">🛡　管理员后台</button>
             <button @click="checkMobileUpdate();menuOpen=false">⟳　检查更新</button>
             <div class="tg-menu-foot">{{ me.displayName }} · @{{ me.username }} · UI {{ mobileBuildVersion }}</div>
           </div>
@@ -1351,6 +1405,11 @@ onBeforeUnmount(() => {
             <strong>外部 API 发消息</strong>
             <p class="hint">为 Hermes、自动化脚本生成专属 Key，无需登录即可向指定用户发送消息。</p>
             <button class="secondary" type="button" @click="goMenu('/api-key')">管理我的 API Key →</button>
+          </div>
+          <div v-if="isAdministrator" class="tg-api-settings-link">
+            <strong>管理员后台</strong>
+            <p class="hint">管理服务端版本、检查官方更新包及查看备份/回滚结果。</p>
+            <button class="secondary" type="button" @click="goMenu('/admin')">进入管理员后台 →</button>
           </div>
           <h3>多设备本地历史同步</h3>
           <p class="hint">需要另一台存有聊天记录的同账号设备在线；历史只在设备之间中转，不长期保存在服务器。</p>
@@ -1438,7 +1497,55 @@ onBeforeUnmount(() => {
         </nav>
       </aside>
       
-      <section v-if="routePath === '/api-key'" class="api-key-pane">
+      <section v-if="routePath === '/admin' && isAdministrator" class="api-key-pane">
+        <header class="api-key-header">
+          <button type="button" class="api-key-back" @click="goMenu('/setting')">‹ 返回设置</button>
+          <div class="api-key-headings"><div class="api-key-icon">⚙</div>
+            <div><h2>管理员后台</h2><p>系统版本与后端更新</p></div>
+          </div>
+        </header>
+        <div class="api-key-scroll">
+          <section class="api-key-block">
+            <h3>服务器状态</h3>
+            <p>当前版本：<strong>{{ adminStatus?.installedVersion || '读取中' }}</strong></p>
+            <p>编译时间：{{ adminStatus?.buildTime || '未知' }}</p>
+            <p>平台：{{ adminStatus?.platform || '未知' }}</p>
+            <p>更新环境：{{ adminStatus?.supported ? 'Windows 原生程序，支持在线更新' : '仅提供查看功能：自动更新需要 Windows 原生安装及辅助程序' }}</p>
+            <p v-if="adminStatus?.busy">当前已有更新任务运行中。</p>
+            <button class="secondary" type="button" @click="refreshAdmin" :disabled="adminBusy">刷新状态与版本</button>
+            <div v-if="adminStatus?.lastResult" class="tg-admin-result">
+              <strong>上次更新：{{ adminStatus.lastResult.success ? '成功' : '失败' }}</strong>
+              <p>目标版本：{{ adminStatus.lastResult.tag }} · {{ adminStatus.lastResult.time }}</p>
+              <p>{{ adminStatus.lastResult.message }}</p>
+            </div>
+          </section>
+          <section class="api-key-block">
+            <h3>从官方 GitHub Release 更新</h3>
+            <p>仅接受项目官方发布包，会对下载文件进行 SHA-256 校验。无法指定任意 URL 或上传不受信任的可执行程序。</p>
+            <label class="api-key-label" for="admin-version">选择目标版本</label>
+            <select id="admin-version" v-model="adminSelectedRelease" class="tg-admin-select">
+              <option value="">请选择已发布版本</option>
+              <option v-for="release in adminReleases" :key="release.tag" :value="release.tag">
+                {{ release.tag }}{{ release.prerelease ? '（测试版）' : '' }} · {{ release.publishedAt?.slice(0,10) }}
+              </option>
+            </select>
+            <p class="api-key-warning">注意：低于当前编译时间的发行版本会被拒绝，以防意外降级。更新前先备份整个 data 文件夹。</p>
+            <p>请手动输入确认短语 <code>UPDATE {{ adminSelectedRelease || '版本号' }}</code></p>
+            <input v-model="adminConfirm" class="tg-admin-confirm" autocomplete="off" placeholder="UPDATE v..." />
+            <button class="primary tg-admin-apply" type="button"
+              :disabled="!adminStatus?.supported || adminBusy || !adminSelectedRelease || adminConfirm !== 'UPDATE '+adminSelectedRelease"
+              @click="applyAdminUpdate">下载、校验并更新后端</button>
+            <p v-if="adminNotice" class="api-key-success" role="status">{{ adminNotice }}</p>
+            <p v-if="adminError" class="api-key-error" role="alert">{{ adminError }}</p>
+          </section>
+          <section class="api-key-block">
+            <h3>备份与限制</h3>
+            <p>更新辅助程序会备份旧的 EXE 和 web、保存 state.json 快照；.env、聊天数据及附件不参与替换。更新完成会自动重启并检查健康状态，失败时尝试回滚。</p>
+            <p>Docker 和 Linux 暂不支持网页自动替换后端，需使用部署工具升级容器或服务。</p>
+          </section>
+        </div>
+      </section>
+      <section v-else-if="routePath === '/api-key'" class="api-key-pane">
         <header class="api-key-header">
           <button type="button" class="api-key-back" @click="goMenu('/setting');mobileChat=false">‹ 返回设置</button>
           <div class="api-key-headings">
