@@ -175,3 +175,5 @@ Windows Edge 推送订阅现允许经安全 HTTPS 的 Microsoft WNS `*.notify.wi
 ## MCP：AI 使用 ZzzMessage 账号登录发消息
 
 新增独立 stdio MCP 程序 `zzzmessage-mcp`（Windows 构建为 `ZzzMessage-MCP.exe`），可供 Hermes 等 AI 客户端使用专用账号密码登录，以该账号身份列出联系人并向指定用户发送私聊。账号密码只通过 MCP 进程本地环境传入，AI 工具不接收密码。建议限制收件人并开启发送前审批。Windows/Linux 发行包包含 MCP 可执行文件与 [安装说明](docs/MCP.md)。
+
+管理员后台已加入 `/admin`（.env 设置 `ADMIN_USERNAME` 指定现有账号后启用）。Windows 原生支持下载官方 GitHub Release 校验后端更新及备份回滚，Linux/Docker 仅可查看。参见 [管理员后台与更新说明](docs/ADMIN_UPDATE.md)。

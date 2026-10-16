@@ -94,3 +94,7 @@ Windows Edge Web Push WNS 地址 `*.notify.windows.com` 已列入允许域名；
 ## MCP 账号登录代理发消息（开发版）
 
 新增 `cmd/zzzmessage-mcp`，提供 stdio MCP 工具 `zzzmessage_list_users` 和 `zzzmessage_send_private_message`。使用独立 AI 账号通过 /api/auth/login 取得会话令牌，/api/direct 复用私聊，/api/messages/send 投递文字。Windows/Linux x64/ARM64 打包将包含 MCP 二进制，使用 ZZZMESSAGE_URL/USERNAME/PASSWORD 本地环境配置并支持收件人白名单，不需 EXTERNAL_SEND_KEY。设置的 /api-key 页面增加 MCP 配置说明。详见 [MCP.md](MCP.md)。
+
+## 管理员后台更新后端
+
+Windows 原生新版包含 `ZzzMessage-Updater.exe`。设置 `ADMIN_USERNAME` 为已注册账号并重启，然后通过 `/admin` 查看官方 GitHub Release、校验包并自动备份/更新/健康检查及回滚。Linux/Docker 不支持网页自动替换。详见 [ADMIN_UPDATE.md](ADMIN_UPDATE.md)。
