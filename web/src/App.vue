@@ -4,7 +4,7 @@ import { keepMessage, keepMessages, loadMessages, loadAllMessages, clearRoom, de
 import { scopeKey, conversationSummaries, sortConversations, searchLocalMessages, previewOf, summarizeReactions } from './chatUiState'
 
 const SERVER_KEY = 'zzzmessage.server'
-const ROUTES = new Set(['/login','/setting','/message','/friend','/gift','/money'])
+const ROUTES = new Set(['/login','/setting','/message','/friend','/gift','/money','/api-key'])
 const initialPath = ROUTES.has(location.pathname) ? location.pathname : '/login'
 const routePath = ref(initialPath)
 const server = ref(localStorage.getItem(SERVER_KEY) || location.origin)
@@ -64,6 +64,79 @@ const recentEmoji = ['😀','😁','😂','🥰','😍','😘','😎','😭','�
 const groupMembers = ref([])
 const newGroup = ref(false)
 const showSettings = ref(false)
+const apiKeys = ref([])
+const keyLabel = ref('')
+const keyRecipients = ref([])
+const keyValidDays = ref(90)
+const keyNewSecret = ref('')
+const keyNewDetails = ref(null)
+const keyBusy = ref(false)
+const keyNotice = ref('')
+const keyError = ref('')
+const keyEndpoint = computed(()=>server.value+'/api/external/send')
+const allowSecureKeys = computed(()=>location.protocol==='https:' || ['localhost','127.0.0.1'].includes(location.hostname))
+const keyExample = computed(()=>[
+  "POST "+keyEndpoint.value,
+  "Authorization: Bearer YOUR_API_KEY",
+  "Content-Type: application/json",
+  "",
+  JSON.stringify({recipient:keyRecipients.value[0] || 'recipient_username',text:'自动通知：任务执行成功'},null,2)
+].join('\n'))
+async function refreshAPIKeys(){
+  if(!me.value)return
+  keyError.value=''
+  try {
+    const result=await request('/api/keys')
+    apiKeys.value=Array.isArray(result.keys)?result.keys:[]
+    if(!users.value.length)await refresh()
+  } catch(err){keyError.value=err?.message||String(err)}
+}
+async function createAPIKey(){
+  if(keyBusy.value)return
+  keyError.value='';keyNotice.value=''
+  if(!keyLabel.value.trim()||!keyRecipients.value.length){
+    keyError.value='请填写名称，并至少勾选一个收件人'
+    return
+  }
+  if(!allowSecureKeys.value){
+    keyError.value='创建密钥请使用 HTTPS 或本机 localhost，避免明文 Key 在局域网中泄露'
+    return
+  }
+  keyBusy.value=true
+  try {
+    const result=await request('/api/keys',{method:'POST',body:JSON.stringify({
+      label:keyLabel.value.trim(),recipients:keyRecipients.value,validDays:Number(keyValidDays.value)
+    })})
+    keyNewDetails.value=result.key
+    keyNewSecret.value=result.secret
+    keyLabel.value=''
+    keyRecipients.value=[]
+    await refreshAPIKeys()
+    keyNotice.value='Key 已创建。请立即复制并安全保存，关闭后不能再次查看。'
+  }catch(err){keyError.value=err?.message||String(err)}
+  finally{keyBusy.value=false}
+}
+async function copyNewAPIKey(){
+  if(!keyNewSecret.value)return
+  try{await navigator.clipboard.writeText(keyNewSecret.value);keyNotice.value='已复制 Key。请保存在可信的密钥管理器中。'}
+  catch(err){keyError.value='复制失败，请手动选中完整 Key：'+(err?.message||err)}
+}
+async function revokeAPIKey(key){
+  if(keyBusy.value||!window.confirm('确定撤销“'+key.label+'”？使用该 Key 的自动通知将立即停止。'))return
+  keyBusy.value=true;keyError.value='';keyNotice.value=''
+  try{
+    await request('/api/keys/'+encodeURIComponent(key.id),{method:'DELETE'})
+    await refreshAPIKeys()
+    if(keyNewDetails.value?.id===key.id){keyNewSecret.value='';keyNewDetails.value=null}
+    keyNotice.value='已撤销 '+key.label
+  }catch(err){keyError.value=err?.message||String(err)}
+  finally{keyBusy.value=false}
+}
+function dismissNewAPIKey(){
+  keyNewSecret.value=''
+  keyNewDetails.value=null
+}
+
 const mobileChat = ref(false)
 const deviceID = ref('')
 const syncStatus = ref('未请求同步')
@@ -434,7 +507,9 @@ function syncRoute(next) {
   routePath.value = next
   if (next === '/gift') void openGiftShop()
   if (next === '/money') void refreshWallet()
-  if (next === '/gift' || next === '/money') mobileChat.value = true
+  if (next === '/gift' || next === '/money' || next === '/api-key') mobileChat.value = true
+  if(next==='/api-key' && me.value) void refreshAPIKeys()
+  if(next!=='/api-key') dismissNewAPIKey()
   showSettings.value = next === '/setting'
   if (next === '/friend') { tab.value = 'people'; mobileChat.value = false }
   if (next === '/message') tab.value = 'chats'
@@ -1140,6 +1215,7 @@ async function logout() {
   token.value = ''; me.value = null; rooms.value = []; users.value = []; messages.value = []
   allLocalMessages.value=[];chatPrefs.value={};replyTo.value=null;messageActions.value=''
   showSettings.value = false; status.value = ''
+  apiKeys.value=[];dismissNewAPIKey();keyLabel.value='';keyRecipients.value=[];keyNotice.value='';keyError.value=''
   navigate('/login',true)
 }
 async function changeServer() {
@@ -1242,6 +1318,7 @@ onBeforeUnmount(() => {
             <button @click="goMenu('/gift')">🎁　礼物商店</button>
             <button @click="goMenu('/money')">🪙　我的钱包</button>
             <button @click="goMenu('/setting')">⚙　设置</button>
+            <button @click="goMenu('/api-key')">⌁　API Key 管理</button>
             <button @click="checkMobileUpdate();menuOpen=false">⟳　检查更新</button>
             <div class="tg-menu-foot">{{ me.displayName }} · @{{ me.username }} · UI {{ mobileBuildVersion }}</div>
           </div>
@@ -1264,6 +1341,11 @@ onBeforeUnmount(() => {
             <p class="hint">检查更新不会清空聊天记录，也不会取消系统通知订阅。</p>
             <button class="secondary" @click="checkMobileUpdate">检查前端更新</button>
             <p v-if="mobileUpdateStatus" class="hint" role="status">{{ mobileUpdateStatus }}</p>
+          </div>
+          <div class="tg-api-settings-link">
+            <strong>外部 API 发消息</strong>
+            <p class="hint">为 Hermes、自动化脚本生成专属 Key，无需登录即可向指定用户发送消息。</p>
+            <button class="secondary" type="button" @click="goMenu('/api-key')">管理我的 API Key →</button>
           </div>
           <h3>多设备本地历史同步</h3>
           <p class="hint">需要另一台存有聊天记录的同账号设备在线；历史只在设备之间中转，不长期保存在服务器。</p>
@@ -1350,6 +1432,78 @@ onBeforeUnmount(() => {
           </button>
         </nav>
       </aside>
+      
+      <section v-if="routePath === '/api-key'" class="api-key-pane">
+        <header class="api-key-header">
+          <button type="button" class="api-key-back" @click="goMenu('/setting');mobileChat=false">‹ 返回设置</button>
+          <div class="api-key-headings">
+            <div class="api-key-icon">⌁</div>
+            <div><h2>API 发消息</h2><p>为自动化程序管理专属发送密钥</p></div>
+          </div>
+        </header>
+        <div class="api-key-scroll">
+          <section class="api-key-block">
+            <h3>接口信息</h3>
+            <p>外部程序不需要登录，通过 API Key 即可发送私聊消息；发送人固定为当前账号 <strong>@{{ me.username }}</strong>。</p>
+            <div class="api-key-url"><code>{{ keyEndpoint }}</code><button type="button" @click="navigator.clipboard.writeText(keyEndpoint)">复制地址</button></div>
+            <p class="api-key-warning">Key 只能发送消息，不能读取历史或管理用户。请通过 HTTPS 调用，不要放进网页前端代码或公开仓库。</p>
+          </section>
+          <section class="api-key-block">
+            <div class="api-key-section-heading"><h3>创建新 Key</h3><span>最多 5 个</span></div>
+            <p v-if="!allowSecureKeys" class="api-key-error">当前不是 HTTPS 环境，请通过 HTTPS 域名打开管理页面后创建。</p>
+            <form class="api-key-form" @submit.prevent="createAPIKey">
+              <label class="api-key-label" for="key-label">用途名称</label>
+              <input id="key-label" v-model="keyLabel" maxlength="48" placeholder="例如：Hermes Agent 日常提醒" />
+              <label class="api-key-label" for="key-expiry">有效期</label>
+              <select id="key-expiry" v-model.number="keyValidDays">
+                <option :value="30">30 天</option>
+                <option :value="90">90 天</option>
+                <option :value="365">365 天</option>
+              </select>
+              <label class="api-key-label">允许发送给哪些用户（至少选择 1 人）</label>
+              <div class="api-key-recipients">
+                <label v-for="person in users" :key="person.username" class="api-key-recipient">
+                  <input v-model="keyRecipients" type="checkbox" :value="person.username" />
+                  <span>{{ person.displayName }} <small>@{{ person.username }}</small></span>
+                </label>
+                <p v-if="!users.length">没有其他注册用户，请先让收件人注册。</p>
+              </div>
+              <button type="submit" class="primary" :disabled="keyBusy||!allowSecureKeys||!keyRecipients.length||!keyLabel.trim()">
+                {{ keyBusy ? '正在创建…' : '生成发送 Key' }}
+              </button>
+            </form>
+            <div v-if="keyNewSecret" class="api-key-secret" role="status">
+              <strong>新 Key（仅显示这一次）</strong>
+              <p>请立即复制保存。页面离开后将不会显示，服务器也无法找回。</p>
+              <code>{{ keyNewSecret }}</code>
+              <div class="api-key-secret-actions">
+                <button class="primary" type="button" @click="copyNewAPIKey">复制 Key</button>
+                <button class="secondary" type="button" @click="dismissNewAPIKey">已保存，关闭</button>
+              </div>
+            </div>
+            <p v-if="keyError" class="api-key-error" role="alert">{{ keyError }}</p>
+            <p v-if="keyNotice" class="api-key-success" role="status">{{ keyNotice }}</p>
+          </section>
+          <section class="api-key-block">
+            <div class="api-key-section-heading"><h3>已创建的 Key</h3><button type="button" @click="refreshAPIKeys">刷新</button></div>
+            <p v-if="!apiKeys.length" class="api-key-empty">尚未创建 Key。</p>
+            <article v-for="entry in apiKeys" :key="entry.id" class="api-key-record">
+              <div class="api-key-record-main">
+                <strong>{{ entry.label }}</strong><small>后四位 ····{{ entry.suffix }}</small>
+                <p>收件人：{{ entry.recipients.join('、') }}</p>
+                <p>有效期至：{{ new Date(entry.expiresAt).toLocaleDateString('zh-CN') }}</p>
+              </div>
+              <button type="button" class="danger" :disabled="keyBusy" @click="revokeAPIKey(entry)">撤销</button>
+            </article>
+          </section>
+          <section class="api-key-block">
+            <h3>如何调用</h3>
+            <p>把 YOUR_API_KEY 换成刚刚复制的密钥，recipient 换成创建时允许的用户名。</p>
+            <pre class="api-key-code">{{ keyExample }}</pre>
+            <p class="hint">HTTP 201 表示已保存消息并开始投递，不等于收件人已阅读或系统通知已显示。发送频率限制为每账号 25 条 / 10 秒。</p>
+          </section>
+        </div>
+      </section>
       <section v-if="routePath === '/money'" class="economy-pane">
         <header class="economy-header">
           <button class="mobile-back" @click="mobileChat=false; navigate('/message')">‹ 返回</button>
