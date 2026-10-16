@@ -512,6 +512,7 @@ function syncRoute(next) {
   if (next === '/gift') void openGiftShop()
   if (next === '/money') void refreshWallet()
   if (next === '/gift' || next === '/money' || next === '/api-key') mobileChat.value = true
+  if (next === '/setting') mobileChat.value = false
   if(next==='/api-key' && me.value) void refreshAPIKeys()
   if(next!=='/api-key') dismissNewAPIKey()
   showSettings.value = next === '/setting'

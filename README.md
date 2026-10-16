@@ -169,3 +169,5 @@ Windows Edge 推送订阅现允许经安全 HTTPS 的 Microsoft WNS `*.notify.wi
 本地消息搜索、未读/置顶、引用回复、文字转发、Emoji 回应和服务器同步的会话通知静音已接入 main。详见 [Telegram 风格功能对照与限制](docs/TG_UI_FILES.md)。
 
 手机端已增加专用 Telegram 风格布局、底部导航与 PWA 版本更新检查；更新服务器 web/ 后在手机版设置页核对 UI 2026.10.16-mobile.1。详情见 [移动端部署与缓存更新说明](docs/TG_UI_FILES.md)。
+
+新增个人 API Key 管理页 `/api-key`，登录用户可直接生成并撤销独立免登录消息发送 Key，配置允许发送的收件人。详见 [外部发送接口说明](docs/EXTERNAL_API.md)。

@@ -84,3 +84,8 @@ Windows Edge Web Push WNS 地址 `*.notify.windows.com` 已列入允许域名；
 ### 2026-10-16 手机版独立界面（未覆盖旧版 Release）
 
 移动端加入专用会话首页、筛选、底部导航、会话头部、资料抽屉和安全区布局。设置中可核对 UI 2026.10.16-mobile.1 并检查 PWA 更新。Windows 一体包含 Web 客户端，更新时替换 exe 和整个 web 目录，保留 .env 与 data/；独立 iPhone PWA 仅用于另行部署 HTTPS 静态网站的场景。HTML/Service Worker 禁用强缓存，新前端首次加载可能需要完全关闭旧 PWA 再打开，但不应删除 PWA 或清除网站数据。
+
+
+## 个人 API 发送 Key 页面
+
+新版登录后可从菜单或设置进入 /api-key，管理自己的免登录发消息 Key：创建、列出、撤销，以及选择可发送的注册用户和30/90/365天有效期。管理走登录 Session，真正发消息仍调用 /api/external/send 并用个人 Key。服务端只保存哈希，Key 仅生成时显示一次，每用户最多5个；原有环境变量 EXTERNAL_SEND_KEY 仍兼容。打包部署要同时替换 EXE 与整个 web 目录，并保留 .env 和 data/state.json。详见 docs/EXTERNAL_API.md。

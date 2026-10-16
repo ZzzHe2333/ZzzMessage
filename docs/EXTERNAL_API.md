@@ -74,3 +74,25 @@ EXTERNAL_SEND_RECIPIENTS 可填写多个用户名，用英文逗号分隔，例�
 - 如果前端从浏览器直接调用此接口，Origin 仍必须在 ALLOWED_ORIGINS 中；不建议在浏览器前端代码中存放 Key。
 
 本功能当前在 main 源码实现，既有 GitHub Release 的 EXE 必须重新构建后才能使用。
+
+
+## 个人发送 Key 管理页（2026-10-16）
+
+登录用户可直接前往 `/api-key`，或从「设置 → 管理我的 API Key」跳转。**该页面不需要操作 Windows 的 .env**：用户可以用自己的登录账号建立独立 Key，且不依赖全局管理员 EXTERNAL_SEND_KEY。
+
+管理 API：
+
+| 方法 | 路径 | 权限 | 功能 |
+|---|---|---|---|
+| GET | /api/keys | 登录用户 Bearer Session | 列出当前账号的 Key 元数据（永不返回明文或哈希） |
+| POST | /api/keys | 登录用户 Bearer Session | 创建 Key，JSON：label、recipients（至少一位）、validDays（30、90、365） |
+| DELETE | /api/keys/{id} | Key 所有者的登录 Session | 立即撤销 Key |
+| POST | /api/external/send | 个人 API Key 或原有管理员 Key | 无需登录，JSON：recipient、text |
+
+个人 Key 以 `zzm_` 开头，共 68 字符，采用加密安全随机源生成。服务端在 `data/state.json` 中仅保存 SHA-256 摘要；**明文只在创建响应中显示一次**。一个账号最多 5 个 Key，每个必须限定 1-30 个已注册的收件人，不能向自己发送。外部请求以 Key 拥有者身份显示消息，不能在请求中覆盖 sender；跨账号查看/撤销被拒绝。
+
+请求示例（测试）：`POST https://jinlangofficeb.ddnsto.com/api/external/send`，请求头 `Authorization: Bearer zzm_...`，请求正文 `{"recipient":"cjz","text":"Hermes 测试通知"}`。服务器按账号执行原有的每10秒最多25条消息限流，返回201表示写入待投递队列，不保证系统通知已展示。
+
+**安全约束：** 只在 HTTPS 管理和传送 Key。不要将 Key 复制到网页前端项目、GitHub、截图或日志；泄露时撤销并生成新 Key。服务器备份 `state.json` 会包含密钥哈希和账号，因此必须妥善保护该文件。此版本没有历史 API 访问权限、没有发送到未授权用户的权限。原有的 .env 管理员 Key 不变，仍可继续使用。
+
+现有用户无需重新注册账号；升级服务端 EXE 与 web 后登录即可使用本页面。
