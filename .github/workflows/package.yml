@@ -1,6 +1,9 @@
 name: Package (on request)
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'validation/2026-10-16-personal-send-api-ui-v2'
 permissions:
   contents: read
 jobs:
