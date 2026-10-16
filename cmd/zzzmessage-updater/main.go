@@ -81,7 +81,6 @@ func startBackend(root string)(*exec.Cmd,error){
  cmd.Env=os.Environ()
  cmd.Stdin=nil;cmd.Stdout=nil;cmd.Stderr=nil
  if err:=cmd.Start();err!=nil{return nil,err}
- _=cmd.Process.Release()
  return cmd,nil
 }
 func applyUpdate(stage,root,data,tag string)error{
@@ -136,6 +135,7 @@ func applyUpdate(stage,root,data,tag string)error{
   _,_ =startBackend(root)
   return fmt.Errorf("updated backend failed health check; previous binary and frontend restored: %w",err)
  }
+ _=cmd.Process.Release()
  _=os.RemoveAll(filepath.Dir(stage))
  return nil
 }

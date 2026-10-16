@@ -91,7 +91,7 @@ func (a *AdminUpdater) supported()bool{
  _,err:=os.Stat(filepath.Join(a.installDir,"ZzzMessage.exe"))
  if err!=nil{return false}
  _,err=os.Stat(filepath.Join(a.installDir,"ZzzMessage-Updater.exe"))
- return runtime.GOOS=="windows"&&err==nil
+ return runtime.GOOS=="windows"&&runtime.GOARCH=="amd64"&&err==nil
 }
 func (s *Server) adminStatus(w http.ResponseWriter,r *http.Request,user string){
  if !s.adminGuard(w,user){return}

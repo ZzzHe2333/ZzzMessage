@@ -1525,8 +1525,9 @@ onBeforeUnmount(() => {
             <label class="api-key-label" for="admin-version">选择目标版本</label>
             <select id="admin-version" v-model="adminSelectedRelease" class="tg-admin-select">
               <option value="">请选择已发布版本</option>
-              <option v-for="release in adminReleases" :key="release.tag" :value="release.tag">
-                {{ release.tag }}{{ release.prerelease ? '（测试版）' : '' }} · {{ release.publishedAt?.slice(0,10) }}
+              <option v-for="release in adminReleases" :key="release.tag" :value="release.tag"
+                :disabled="adminStatus?.buildTime && release.publishedAt <= adminStatus.buildTime">
+                {{ release.tag }}{{ release.prerelease ? '（测试版）' : '' }} · {{ release.publishedAt?.slice(0,10) }}{{ adminStatus?.buildTime && release.publishedAt <= adminStatus.buildTime ? ' · 旧版不可安装' : '' }}
               </option>
             </select>
             <p class="api-key-warning">注意：低于当前编译时间的发行版本会被拒绝，以防意外降级。更新前先备份整个 data 文件夹。</p>
