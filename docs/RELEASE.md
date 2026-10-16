@@ -79,3 +79,8 @@ Windows/Linux/Web/iPhone PWA 源码增加搜索、会话资料、Emoji 和群成
 Windows Edge Web Push WNS 地址 `*.notify.windows.com` 已列入允许域名；更换过服务端或 VAPID 密钥的设备需要先通过应用按钮取消旧订阅，再开启新订阅。详情见 [TG_UI_FILES.md](TG_UI_FILES.md)。
 
 开发版新增会话消息摘要、未读/置顶、本地搜索与草稿、持久引用回复、跨设备 Emoji 回应以及服务器持久化的会话静音（/api/rooms/mutes）。图片/音视频预览需从登录客户端授权取回附件，不暴露静态文件路径。新的 Web 与 iPhone PWA 已在 npm test 中加入状态逻辑回归测试，部署前需运行完整构建和设备实测。详情见 TG_UI_FILES.md。
+
+
+### 2026-10-16 手机版独立界面（未覆盖旧版 Release）
+
+移动端加入专用会话首页、筛选、底部导航、会话头部、资料抽屉和安全区布局。设置中可核对 UI 2026.10.16-mobile.1 并检查 PWA 更新。Windows 一体包含 Web 客户端，更新时替换 exe 和整个 web 目录，保留 .env 与 data/；独立 iPhone PWA 仅用于另行部署 HTTPS 静态网站的场景。HTML/Service Worker 禁用强缓存，新前端首次加载可能需要完全关闭旧 PWA 再打开，但不应删除 PWA 或清除网站数据。
