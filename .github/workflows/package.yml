@@ -1,6 +1,9 @@
 name: Package (on request)
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'validation/2026-10-16-admin-backend-updater-v2'
 permissions:
   contents: read
 jobs:
