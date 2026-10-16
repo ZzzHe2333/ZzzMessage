@@ -116,6 +116,10 @@ async function createAPIKey(){
   }catch(err){keyError.value=err?.message||String(err)}
   finally{keyBusy.value=false}
 }
+async function copyKeyEndpoint(){
+  try{await navigator.clipboard.writeText(keyEndpoint.value);keyNotice.value='已复制 API 地址'}
+  catch(error){keyError.value='复制地址失败：'+(error?.message||error)}
+}
 async function copyNewAPIKey(){
   if(!keyNewSecret.value)return
   try{await navigator.clipboard.writeText(keyNewSecret.value);keyNotice.value='已复制 Key。请保存在可信的密钥管理器中。'}
@@ -1445,7 +1449,7 @@ onBeforeUnmount(() => {
           <section class="api-key-block">
             <h3>接口信息</h3>
             <p>外部程序不需要登录，通过 API Key 即可发送私聊消息；发送人固定为当前账号 <strong>@{{ me.username }}</strong>。</p>
-            <div class="api-key-url"><code>{{ keyEndpoint }}</code><button type="button" @click="navigator.clipboard.writeText(keyEndpoint)">复制地址</button></div>
+            <div class="api-key-url"><code>{{ keyEndpoint }}</code><button type="button" @click="copyKeyEndpoint">复制地址</button></div>
             <p class="api-key-warning">Key 只能发送消息，不能读取历史或管理用户。请通过 HTTPS 调用，不要放进网页前端代码或公开仓库。</p>
           </section>
           <section class="api-key-block">
@@ -1504,7 +1508,7 @@ onBeforeUnmount(() => {
           </section>
         </div>
       </section>
-      <section v-if="routePath === '/money'" class="economy-pane">
+      <section v-else-if="routePath === '/money'" class="economy-pane">
         <header class="economy-header">
           <button class="mobile-back" @click="mobileChat=false; navigate('/message')">‹ 返回</button>
           <h2>我的钱包</h2>
