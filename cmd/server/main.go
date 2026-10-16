@@ -98,6 +98,12 @@ func withStaticSite(api http.Handler, root string) http.Handler {
             http.Error(w,"Method not allowed",http.StatusMethodNotAllowed); return
         }
         cleaned := path.Clean("/" + r.URL.Path)
+        // Always revalidate HTML and the service worker. Fingerprinted JS/CSS
+        // remain handled by Workbox and may be cached safely.
+        if cleaned=="/" || cleaned=="/index.html" || cleaned=="/sw.js" ||
+           cleaned=="/manifest.webmanifest" || path.Ext(cleaned)=="" {
+            w.Header().Set("Cache-Control","no-cache, max-age=0, must-revalidate")
+        }
         if strings.HasPrefix(cleaned,"/.") || strings.Contains(cleaned,"/.") {
             http.NotFound(w,r); return
         }

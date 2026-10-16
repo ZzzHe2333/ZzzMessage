@@ -1,5 +1,8 @@
 :80 {
     encode gzip
+    # PWA navigations and service-worker script must not become stale at proxy.
+    @fresh path / /index.html /sw.js /manifest.webmanifest /login /message /friend /setting /gift /money
+    header @fresh Cache-Control "no-cache, max-age=0, must-revalidate"
     handle /api/* {
         reverse_proxy server:58463
     }
