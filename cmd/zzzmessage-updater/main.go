@@ -154,6 +154,14 @@ func main(){
  err:=applyUpdate(stage,root,data,tag)
  if err!=nil{
   record(data,tag,false,err.Error())
+  // On failures after server shutdown, ensure that the restored binary is
+  // launched. Do not start a duplicate if the old server is still healthy.
+  probeCtx,cancel:=context.WithTimeout(context.Background(),2*time.Second)
+  existing:=waitHealth(probeCtx)
+  cancel()
+  if existing!=nil {
+    _,_ =startBackend(root)
+  }
   os.Exit(1)
  }
  record(data,tag,true,"新版本已安装并通过健康检查；旧后端、旧前端和状态快照保留在 data/updates/backups")
