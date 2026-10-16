@@ -41,6 +41,9 @@ jobs:
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-windows-amd64/ZzzMessage.exe ./cmd/server
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-amd64/zzzmessage ./cmd/server
           CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-arm64/zzzmessage ./cmd/server
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-windows-amd64/ZzzMessage-MCP.exe ./cmd/zzzmessage-mcp
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-amd64/zzzmessage-mcp ./cmd/zzzmessage-mcp
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o stage/ZzzMessage-linux-arm64/zzzmessage-mcp ./cmd/zzzmessage-mcp
           for target in windows-amd64 linux-amd64 linux-arm64; do
             cp -R web/dist/. "stage/ZzzMessage-$target/web/"
             cp .env.example "stage/ZzzMessage-$target/.env.example"
@@ -51,8 +54,14 @@ jobs:
           cp scripts/start-windows-lan.bat stage/ZzzMessage-windows-amd64/start-lan.bat
           cp scripts/start-linux.sh stage/ZzzMessage-linux-amd64/start.sh
           cp scripts/start-linux.sh stage/ZzzMessage-linux-arm64/start.sh
-          chmod +x stage/ZzzMessage-linux-amd64/{start.sh,zzzmessage} stage/ZzzMessage-linux-arm64/{start.sh,zzzmessage}
+          chmod +x stage/ZzzMessage-linux-amd64/{start.sh,zzzmessage,zzzmessage-mcp} stage/ZzzMessage-linux-arm64/{start.sh,zzzmessage,zzzmessage-mcp}
+          cp docs/MCP.md stage/ZzzMessage-windows-amd64/MCP.md
+          cp docs/MCP.md stage/ZzzMessage-linux-amd64/MCP.md
+          cp docs/MCP.md stage/ZzzMessage-linux-arm64/MCP.md
           (cd stage && zip -qr ../packages/ZzzMessage-Windows-amd64.zip ZzzMessage-windows-amd64)
+          (cd stage/ZzzMessage-windows-amd64 && zip -q ../../packages/ZzzMessage-MCP-Windows-amd64.zip ZzzMessage-MCP.exe MCP.md)
+          (cd stage/ZzzMessage-linux-amd64 && tar -czf ../../packages/ZzzMessage-MCP-Linux-amd64.tar.gz zzzmessage-mcp MCP.md)
+          (cd stage/ZzzMessage-linux-arm64 && tar -czf ../../packages/ZzzMessage-MCP-Linux-arm64.tar.gz zzzmessage-mcp MCP.md)
           (cd stage && tar -czf ../packages/ZzzMessage-Linux-amd64.tar.gz ZzzMessage-linux-amd64)
           (cd stage && tar -czf ../packages/ZzzMessage-Linux-arm64.tar.gz ZzzMessage-linux-arm64)
           (cd web/dist && zip -qr ../../packages/ZzzMessage-Web-static.zip .)
